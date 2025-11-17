@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -9,129 +9,141 @@ using System.Threading.Tasks;
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Represents the logic for the CRUD of the manufacturer models.
+    /// Represents the logic for the CRUD operations of the manufacturer models.
+    /// This class uses Entity Framework to interact with the database context.
     /// </summary>
     public class ManufacturerModelsLogic : BaseLogic
     {
+        // --- READ Operations ---
 
         /// <summary>
-        /// Gets all the manufacturers!
+        /// Retrieves all car manufacturers from the database, ordered by name.
         /// </summary>
-        /// <returns>List of all the manufacturers.</returns>
-        public List<Manufacturer> GetAllManufacturers()
-        {
-            return DB.Manufacturers.OrderBy(m => m.ManufacturerName).ToList();
-        }
+        /// <returns>A <see cref="List{Manufacturer}"/> containing all manufacturers.</returns>
+        public List<Manufacturer> GetAllManufacturers() =>
+            DB.Manufacturers
+                .OrderBy(m => m.ManufacturerName)
+                .ToList();
 
         /// <summary>
-        /// Gets all the manufacturer models.
+        /// Retrieves all manufacturer models, including the related Manufacturer entity.
+        /// Results are ordered by manufacturer name, then by model name.
         /// </summary>
-        /// <returns>List of all the manufacturer models.</returns>
-        public List<ManufacturerModel> GetAllManufacturerModels()
-        {
-            return DB.ManufacturerModels.Include(c => c.Manufacturer)
-                                        .OrderBy(m => m.Manufacturer.ManufacturerName)
-                                        .ThenBy(m => m.ManufacturerModelName)
-                                        .ToList();
-        }
+        /// <returns>A <see cref="List{ManufacturerModel}"/> containing all car models.</returns>
+        public List<ManufacturerModel> GetAllManufacturerModels() =>
+            DB.ManufacturerModels
+                .Include(mm => mm.Manufacturer)
+                .OrderBy(mm => mm.Manufacturer.ManufacturerName)
+                .ThenBy(mm => mm.ManufacturerModelName)
+                .ToList();
 
         /// <summary>
-        /// Gets the manufacturer models for a manufacturer.
+        /// Retrieves manufacturer models associated with a specific manufacturer ID.
         /// </summary>
-        /// <param name="manufacturerID">The ID of the manufacturer to find the models.</param>
-        /// <returns>List of all manufacturer models for the manufacturer.</returns>
-        public List<ManufacturerModel> GetModelsForManufacturer(int manufacturerID)
-        {
-            return DB.ManufacturerModels.Where(m => m.Manufacturer.ManufacturerID == manufacturerID)
-                                        .OrderBy(m => m.Manufacturer.ManufacturerName)
-                                        .ThenBy(m => m.ManufacturerModelName)
-                                        .ToList();
-        }
+        /// <param name="manufacturerID">The ID of the manufacturer.</param>
+        /// <returns>A <see cref="List{ManufacturerModel}"/> filtered by the given ID, ordered by name.</returns>
+        public List<ManufacturerModel> GetModelsForManufacturer(int manufacturerID) =>
+            DB.ManufacturerModels
+                .Where(mm => mm.Manufacturer.ManufacturerID == manufacturerID)
+                .OrderBy(mm => mm.Manufacturer.ManufacturerName)
+                .ThenBy(mm => mm.ManufacturerModelName)
+                .ToList();
 
         /// <summary>
-        /// Gets a manufacturer model by ID.
+        /// Retrieves a single manufacturer model by its primary key ID.
         /// </summary>
-        /// <param name="id">The ID of the manufacturer model.</param>
-        /// <returns>The manufacturer model details.</returns>
-        public ManufacturerModel GetManufacturerModelByID(int id)
-        {
-            return DB.ManufacturerModels.Find(id);
-        }
+        /// <param name="id">The unique ID of the manufacturer model.</param>
+        /// <returns>The <see cref="ManufacturerModel"/> entity or null if not found.</returns>
+        public ManufacturerModel GetManufacturerModelByID(int id) =>
+            DB.ManufacturerModels.Find(id);
+
+
+        // --- WRITE Operations ---
 
         /// <summary>
-        /// Inserts a new manufacturer model.
+        /// Inserts a new manufacturer model into the database.
         /// </summary>
-        /// <param name="manufacturerModel">The manufacturer model to insert.</param>
+        /// <param name="manufacturerModel">The manufacturer model entity to insert.</param>
+        /// <exception cref="ArgumentNullException">Thrown if the provided model is null.</exception>
         public void InsertManufacturerModel(ManufacturerModel manufacturerModel)
         {
             if (manufacturerModel == null)
-                throw new ArgumentNullException();
+                throw new ArgumentNullException(nameof(manufacturerModel));
 
             DB.ManufacturerModels.Add(manufacturerModel);
             DB.SaveChanges();
         }
 
         /// <summary>
-        /// Updates a manufacturer model.
+        /// Updates an existing manufacturer model in the database.
         /// </summary>
-        /// <param name="manufacturerModel">The manufacturer model to update.</param>
+        /// <param name="manufacturerModel">The detached manufacturer model entity with updated values.</param>
+        /// <exception cref="ArgumentNullException">Thrown if the provided model is null.</exception>
         public void UpdateManufacturerModel(ManufacturerModel manufacturerModel)
         {
             if (manufacturerModel == null)
-                throw new ArgumentNullException();
+                throw new ArgumentNullException(nameof(manufacturerModel));
 
             DB.Entry(manufacturerModel).State = EntityState.Modified;
             DB.SaveChanges();
         }
 
         /// <summary>
-        /// Deletes a manufacturer model.
+        /// Deletes a manufacturer model, optionally performing a collective delete of related entities (cascading delete).
         /// </summary>
         /// <param name="manufacturerModel">The manufacturer model to delete.</param>
-        /// <param name="isCollective">Indicator if to perform a collective delete, if to delete all it's related data.</param>
+        /// <param name="isCollective">If <c>true</c>, related Rentals, FleetCars, and CarModels are also deleted.</param>
+        /// <exception cref="ArgumentNullException">Thrown if the provided model is null.</exception>
         public void DeleteManufacturerModel(ManufacturerModel manufacturerModel, bool isCollective = false)
         {
             if (manufacturerModel == null)
-                throw new ArgumentNullException();
+                throw new ArgumentNullException(nameof(manufacturerModel));
 
-            // Checks if to perform a collective delete:
+            // Perform collective (cascading) delete of dependent data if requested.
             if (isCollective)
             {
-                // Begins to delete any related data, to this manufacturer model:
+                var modelId = manufacturerModel.ManufacturerModelID;
 
-                // Deletes all the rentals, related to this manufacturer model:
-                List<Rental> orders = DB.Rentals.Where(r => r.FleetCar.CarModel.ManufacturerModel.ManufacturerModelID == manufacturerModel.ManufacturerModelID).ToList();
-                foreach (Rental r in orders)
-                    DB.Rentals.Remove(r);
+                // 1. Rentals: Delete all rentals related to this manufacturer model.
+                var rentalsToDelete = DB.Rentals
+                    .Where(r => r.FleetCar.CarModel.ManufacturerModel.ManufacturerModelID == modelId);
 
-                // Deletes all the fleet cars, related to this manufacturer model:
-                List<FleetCar> fleet = DB.FleetCars.Where(f => f.CarModel.ManufacturerModel.ManufacturerModelID == manufacturerModel.ManufacturerModelID).ToList();
-                foreach (FleetCar f in fleet)
-                    DB.FleetCars.Remove(f);
+                DB.Rentals.RemoveRange(rentalsToDelete);
 
-                // Deletes all the car models, related to this manufacturer model:
-                List<CarModel> carModels = DB.CarModels.Where(c => c.ManufacturerModel.ManufacturerModelID == manufacturerModel.ManufacturerModelID).ToList();
-                foreach (CarModel c in carModels)
-                    DB.CarModels.Remove(c);
+                // 2. FleetCars: Delete all fleet cars related to this manufacturer model.
+                var fleetCarsToDelete = DB.FleetCars
+                    .Where(f => f.CarModel.ManufacturerModel.ManufacturerModelID == modelId);
+
+                DB.FleetCars.RemoveRange(fleetCarsToDelete);
+
+                // 3. CarModels: Delete all car models related to this manufacturer model.
+                var carModelsToDelete = DB.CarModels
+                    .Where(c => c.ManufacturerModel.ManufacturerModelID == modelId);
+
+                DB.CarModels.RemoveRange(carModelsToDelete);
             }
 
-            // Deletes this manufacturer model:
+            // Finally, delete the manufacturer model itself.
             DB.ManufacturerModels.Remove(manufacturerModel);
             DB.SaveChanges();
         }
 
+        // --- Utility Operations ---
+
         /// <summary>
-        /// Checks if a manufacturer model exists.
+        /// Checks if a manufacturer model with the same name and manufacturer ID already exists.
         /// </summary>
-        /// <param name="manufacturerModel">The manufacturer model to check.</param>
-        /// <returns>True or False, if there's already a manufacturer model.</returns>
+        /// <param name="manufacturerModel">The manufacturer model entity to check for existence.</param>
+        /// <returns><c>true</c> if a matching model exists; otherwise, <c>false</c>.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if the provided model is null.</exception>
         public bool IsManufacturerModelExists(ManufacturerModel manufacturerModel)
         {
             if (manufacturerModel == null)
-                throw new ArgumentNullException();
+                throw new ArgumentNullException(nameof(manufacturerModel));
 
-            return DB.ManufacturerModels.Any(m => m.ManufacturerModelName == manufacturerModel.ManufacturerModelName &&
-                                             m.Manufacturer.ManufacturerID == manufacturerModel.ManufacturerID);
+            return DB.ManufacturerModels.Any(m =>
+                m.ManufacturerModelName == manufacturerModel.ManufacturerModelName &&
+                m.Manufacturer.ManufacturerID == manufacturerModel.ManufacturerID);
         }
 
     }
