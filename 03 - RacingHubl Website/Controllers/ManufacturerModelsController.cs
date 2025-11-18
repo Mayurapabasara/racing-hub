@@ -1,230 +1,235 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Data.Entity.Infrastructure;
-using System.Linq;
-using System.Web;
+using System.Threading.Tasks;
 using System.Web.Mvc;
+using RacingHubCarRental.Services.Interfaces;
+using RacingHubCarRental.Models;
+using RacingHubCarRental.ViewModels;
 
-namespace RacingHubCarRental
+namespace RacingHubCarRental.Controllers
 {
     /// <summary>
-    /// Provides pages for manufacturer models management.
+    /// Manages CRUD operations for Manufacturer Models (Admin-only).
+    /// Fully rewritten for async, DI, SOLID and clean-architecture support.
     /// </summary>
     [Authorize(Roles = "Admin")]
     public class ManufacturerModelsController : Controller
     {
+        private readonly IManufacturerModelsService _modelsService;
+        private readonly IManufacturersService _manufacturersService;
 
-        #region Private Fields
+        public ManufacturerModelsController(
+            IManufacturerModelsService modelsService,
+            IManufacturersService manufacturersService)
+        {
+            _modelsService = modelsService;
+            _manufacturersService = manufacturersService;
+        }
 
-        /// <summary>
-        /// Holds the logic for the CRUD of the manufacturer models.
-        /// </summary>
-        private ManufacturerModelsLogic logic = new ManufacturerModelsLogic();
-
-        #endregion
-
-        /// <summary>
-        /// Page displays: All the manufacturer models in a list.
-        /// </summary>
-        public ActionResult Index()
+        // =======================================================
+        // LIST PAGE
+        // =======================================================
+        public async Task<ActionResult> Index()
         {
             try
             {
-                return View(logic.GetAllManufacturerModels());
+                var list = await _modelsService.GetAllAsync();
+                return View(list);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Failed to load manufacturer models.";
                 return View(new List<ManufacturerModel>());
             }
         }
 
-        /// <summary>
-        /// Page displays: The details of a manufacturer model.
-        /// </summary>
-        public ActionResult Details(int id = 0)
+        // =======================================================
+        // DETAILS PAGE
+        // =======================================================
+        public async Task<ActionResult> Details(int id)
         {
             try
             {
-                ManufacturerModel manufacturerModel = logic.GetManufacturerModelByID(id);
-                if (manufacturerModel == null)
+                var entity = await _modelsService.GetByIdAsync(id);
+                if (entity == null)
                     return HttpNotFound();
 
-                return View(manufacturerModel);
+                return View(entity);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Could not load details.";
                 return View(new ManufacturerModel());
             }
         }
 
-        /// <summary>
-        /// Page displays: A form to add a new manufacturer model.
-        /// </summary>
-        public ActionResult Create()
+        // =======================================================
+        // CREATE (GET)
+        // =======================================================
+        public async Task<ActionResult> Create()
         {
             try
             {
-                ViewBag.ManufacturerID = new SelectList(logic.GetAllManufacturers(), "ManufacturerID", "ManufacturerName");
-                return View();
+                var vm = new ManufacturerModelViewModel
+                {
+                    Manufacturers = await LoadManufacturersAsync()
+                };
+
+                return View(vm);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View();
+                ViewBag.ErrorMessage = "Error loading create page.";
+                return View(new ManufacturerModelViewModel());
             }
         }
 
-        /// <summary>
-        /// Page displays: A form to add a new manufacturer model. (POST)
-        /// </summary>
+        // =======================================================
+        // CREATE (POST)
+        // =======================================================
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Create(ManufacturerModel manufacturerModel)
+        public async Task<ActionResult> Create(ManufacturerModelViewModel vm)
         {
             try
             {
                 if (!ModelState.IsValid)
                 {
-                    ViewBag.ManufacturerID = new SelectList(logic.GetAllManufacturers(), "ManufacturerID", "ManufacturerName", manufacturerModel.ManufacturerID);
-                    return View(manufacturerModel);
+                    vm.Manufacturers = await LoadManufacturersAsync();
+                    return View(vm);
                 }
 
-                // Checks if manufacturer model already exists:
-                if (logic.IsManufacturerModelExists(manufacturerModel))
+                if (await _modelsService.ExistsAsync(vm.ToEntity()))
                 {
-                    ViewBag.ErrorMessage = "Manufacturer model already exists.";
-                    ViewBag.ManufacturerID = new SelectList(logic.GetAllManufacturers(), "ManufacturerID", "ManufacturerName", manufacturerModel.ManufacturerID);
-                    return View(manufacturerModel);
-                }
-                else
-                {
-                    // Manufacturer model is OK to insert:
-                    logic.InsertManufacturerModel(manufacturerModel);
-                    return RedirectToAction("Index");
-                }
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(manufacturerModel);
-            }
-        }
-
-        /// <summary>
-        /// Page displays: A form to edit a manufacturer model.
-        /// </summary>
-        public ActionResult Edit(int id = 0)
-        {
-            try
-            {
-                ManufacturerModel manufacturerModel = logic.GetManufacturerModelByID(id);
-                if (manufacturerModel == null)
-                    return HttpNotFound();
-
-                ViewBag.ManufacturerID = new SelectList(logic.GetAllManufacturers(), "ManufacturerID", "ManufacturerName", manufacturerModel.ManufacturerID);
-                return View(manufacturerModel);
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(new ManufacturerModel());
-            }
-        }
-
-        /// <summary>
-        /// Page displays: A form to edit a manufacturer model. (POST)
-        /// </summary>
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public ActionResult Edit(ManufacturerModel manufacturerModel)
-        {
-            try
-            {
-                if (!ModelState.IsValid)
-                {
-                    ViewBag.ManufacturerID = new SelectList(logic.GetAllManufacturers(), "ManufacturerID", "ManufacturerName", manufacturerModel.ManufacturerID);
-                    return View(manufacturerModel);
+                    ViewBag.ErrorMessage = "This manufacturer model already exists.";
+                    vm.Manufacturers = await LoadManufacturersAsync();
+                    return View(vm);
                 }
 
-                logic.UpdateManufacturerModel(manufacturerModel);
+                await _modelsService.CreateAsync(vm.ToEntity());
                 return RedirectToAction("Index");
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(manufacturerModel);
+                ViewBag.ErrorMessage = "Failed to create manufacturer model.";
+                vm.Manufacturers = await LoadManufacturersAsync();
+                return View(vm);
             }
         }
 
-        /// <summary>
-        /// Page displays: A manufacturer model to delete.
-        /// </summary>
-        public ActionResult Delete(int id = 0)
+        // =======================================================
+        // EDIT (GET)
+        // =======================================================
+        public async Task<ActionResult> Edit(int id)
         {
             try
             {
-                ManufacturerModel manufacturerModel = logic.GetManufacturerModelByID(id);
-                if (manufacturerModel == null)
+                var entity = await _modelsService.GetByIdAsync(id);
+                if (entity == null)
                     return HttpNotFound();
 
-                return View(manufacturerModel);
+                var vm = ManufacturerModelViewModel.FromEntity(entity);
+                vm.Manufacturers = await LoadManufacturersAsync();
+
+                return View(vm);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Error loading edit page.";
+                return View(new ManufacturerModelViewModel());
+            }
+        }
+
+        // =======================================================
+        // EDIT (POST)
+        // =======================================================
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<ActionResult> Edit(ManufacturerModelViewModel vm)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    vm.Manufacturers = await LoadManufacturersAsync();
+                    return View(vm);
+                }
+
+                await _modelsService.UpdateAsync(vm.ToEntity());
+                return RedirectToAction("Index");
+            }
+            catch
+            {
+                ViewBag.ErrorMessage = "Failed to update manufacturer model.";
+                vm.Manufacturers = await LoadManufacturersAsync();
+                return View(vm);
+            }
+        }
+
+        // =======================================================
+        // DELETE (GET)
+        // =======================================================
+        public async Task<ActionResult> Delete(int id)
+        {
+            try
+            {
+                var entity = await _modelsService.GetByIdAsync(id);
+                if (entity == null)
+                    return HttpNotFound();
+
+                return View(entity);
+            }
+            catch
+            {
+                ViewBag.ErrorMessage = "Could not load delete page.";
                 return View(new ManufacturerModel());
             }
         }
 
-        /// <summary>
-        /// Page displays: A manufacturer model to delete. (POST)
-        /// </summary>
+        // =======================================================
+        // DELETE (POST)
+        // =======================================================
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
-        public ActionResult DeleteConfirmed(int id)
+        public async Task<ActionResult> DeleteConfirmed(int id)
         {
             try
             {
-                logic.DeleteManufacturerModel(logic.GetManufacturerModelByID(id));
+                var result = await _modelsService.DeleteAsync(id);
+                if (!result.Success)
+                {
+                    return RedirectToAction("DeleteFailed", new { id });
+                }
+
                 return RedirectToAction("Index");
             }
-            catch (DbUpdateException)
+            catch
             {
-                // If can't delete, because it has a relationship with other records, redirects to "DeleteFailed" action:
-                return RedirectToAction("DeleteFailed", new { id });
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(logic.GetManufacturerModelByID(id));
+                ViewBag.ErrorMessage = "Failed to delete manufacturer model.";
+                return View(await _modelsService.GetByIdAsync(id));
             }
         }
 
-        /// <summary>
-        /// Page displays: Proceed option, after delete has failed.
-        /// </summary>
-        public ActionResult DeleteFailed(int id = 0)
+        // =======================================================
+        // DELETE FAILED
+        // =======================================================
+        public async Task<ActionResult> DeleteFailed(int id)
         {
             try
             {
-                ManufacturerModel mfrMdl = logic.GetManufacturerModelByID(id);
-                if (mfrMdl == null)
+                var entity = await _modelsService.GetByIdAsync(id);
+                if (entity == null)
                     return HttpNotFound();
 
-                return View(mfrMdl);
+                return View(entity);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Error loading delete failed page.";
                 return View(new ManufacturerModel());
             }
         }
 
-        /// <summary>
-        /// Page displays: Proceed option, after delete has failed. (POST)
-        /// </summary>
         [HttpPost, ActionName("DeleteFailed")]
         [ValidateAntiForgeryToken]
         public ActionResult DeleteFailedProceed(int id)
@@ -232,77 +237,84 @@ namespace RacingHubCarRental
             return RedirectToAction("DeleteCollective", new { id });
         }
 
-        /// <summary>
-        /// Page displays: A manufacturer model to delete collective.
-        /// </summary>
-        public ActionResult DeleteCollective(int id = 0)
+        // =======================================================
+        // DELETE COLLECTIVE (GET)
+        // =======================================================
+        public async Task<ActionResult> DeleteCollective(int id)
         {
             try
             {
-                ManufacturerModel mfrMdl = logic.GetManufacturerModelByID(id);
-                if (mfrMdl == null)
+                var entity = await _modelsService.GetByIdAsync(id);
+                if (entity == null)
                     return HttpNotFound();
 
-                return View(mfrMdl);
+                return View(entity);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(logic.GetManufacturerModelByID(id));
+                ViewBag.ErrorMessage = "Error loading delete collective page.";
+                return View(new ManufacturerModel());
             }
         }
 
-        /// <summary>
-        /// Page displays: A manufacturer model to delete collective. (POST)
-        /// </summary>
+        // =======================================================
+        // DELETE COLLECTIVE (POST)
+        // =======================================================
         [HttpPost, ActionName("DeleteCollective")]
         [ValidateAntiForgeryToken]
-        public ActionResult DeleteCollectiveConfirmed(int id)
+        public async Task<ActionResult> DeleteCollectiveConfirmed(int id)
         {
             try
             {
-                logic.DeleteManufacturerModel(logic.GetManufacturerModelByID(id), true);
+                await _modelsService.DeleteCollectiveAsync(id);
                 return RedirectToAction("Index");
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(logic.GetManufacturerModelByID(id));
+                ViewBag.ErrorMessage = "Could not delete manufacturer model.";
+                return View(await _modelsService.GetByIdAsync(id));
             }
         }
 
-        #region AJAX Requests
-
-        /// <summary>
-        /// Gets a manufacturer's ID, and returns all of it's manufacturer models.
-        /// </summary>
-        /// <param name="manufacturerID">The ID of the manufacturer to find it's models.</param>
-        /// <returns>Returns a select list with all of the manufacturer models. If failed, returns null.</returns>
+        // =======================================================
+        // AJAX: Get Models For Manufacturer
+        // =======================================================
         [AllowAnonymous]
-        public JsonResult GetModelsForManufacturer(string manufacturerID)
+        public async Task<JsonResult> GetModelsForManufacturer(string manufacturerID)
         {
             try
             {
-                int id = int.Parse(manufacturerID); // Parses the ID of the manufacturer.
+                if (!int.TryParse(manufacturerID, out int id))
+                    return Json(null, JsonRequestBehavior.AllowGet);
 
-                // Gets the ManufacturerModels for the Manufacturer from the repository:
-                List<ManufacturerModel> manufacturerModels = logic.GetModelsForManufacturer(id);
+                var models = await _modelsService.GetByManufacturerIdAsync(id);
 
-                List<SelectListItem> selectList = new List<SelectListItem>(); // Creates a new select list
+                var result = models.ConvertAll(x => new SelectListItem
+                {
+                    Text = x.ManufacturerModelName,
+                    Value = x.ManufacturerModelID.ToString()
+                });
 
-                // Adds the manufacturer models to the SelectList:
-                foreach (ManufacturerModel model in manufacturerModels)
-                    selectList.Add(new SelectListItem() { Text = model.ManufacturerModelName, Value = model.ManufacturerModelID.ToString() });
-
-                return Json(selectList, JsonRequestBehavior.AllowGet);
+                return Json(result, JsonRequestBehavior.AllowGet);
             }
-            catch (Exception)
+            catch
             {
                 return Json(null, JsonRequestBehavior.AllowGet);
             }
         }
 
-        #endregion
-
+        // =======================================================
+        // HELPER: Load Dropdowns
+        // =======================================================
+        private async Task<List<SelectListItem>> LoadManufacturersAsync()
+        {
+            var list = await _manufacturersService.GetAllAsync();
+            return list.ConvertAll(m => new SelectListItem
+            {
+                Text = m.ManufacturerName,
+                Value = m.ManufacturerID.ToString()
+            });
+        }
     }
 }
+
