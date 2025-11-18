@@ -1,204 +1,197 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
+using System;
+using System.Threading.Tasks;
 using System.Web.Mvc;
-using System.Web.Security;
+using Microsoft.Owin.Security;
+using RacingHubCarRental.Services;
+using RacingHubCarRental.Models.ViewModels;
 
-namespace RacingHubCarRental
+namespace RacingHubCarRental.Controllers
 {
     /// <summary>
-    /// Provides pages for account management.
+    /// Handles all authentication & user account operations.
+    /// Advanced version rewritten for better maintainability, 
+    /// testability, SOLID structure, async performance, and security.
     /// </summary>
     public class AccountController : Controller
     {
-
-        #region Private Fields
-
-        /// <summary>
-        /// Holds the logic for the User!
-        /// </summary>
-        private UsersLogic logic = new UsersLogic();
-
-        #endregion
+        private readonly IUsersService _usersService;
+        private IAuthenticationManager Auth => HttpContext.GetOwinContext().Authentication;
 
         /// <summary>
-        /// Page displays: A form to register a new user.
+        /// Uses dependency injection to resolve needed services.
         /// </summary>
+        public AccountController(IUsersService usersService)
+        {
+            _usersService = usersService 
+                ?? throw new ArgumentNullException(nameof(usersService));
+        }
+
+        // ================================
+        // REGISTER (GET)
+        // ================================
         public ActionResult Register()
         {
-            // If the user is already logged in, redirects him to his profile:
             if (User.Identity.IsAuthenticated)
                 return RedirectToAction("UserProfile");
 
-            return View();
+            return View(new RegisterViewModel());
         }
 
-        /// <summary>
-        /// Page displays: A form to register a new user. (POST)
-        /// </summary>
+        // ================================
+        // REGISTER (POST)
+        // ================================
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Register(RegisterViewModel model)
+        public async Task<ActionResult> Register(RegisterViewModel model)
         {
             if (!ModelState.IsValid)
                 return View(model);
 
             try
             {
-                // Checks if the username is already taken:
-                if (logic.IsUsernameTaken(model.Username))
+                // Username uniqueness check
+                if (await _usersService.IsUsernameTakenAsync(model.Username))
                 {
-                    ViewBag.ErrorMessage = "Username is already taken by someone else.";
-                    return View();
+                    ModelState.AddModelError("", "Username is already taken.");
+                    return View(model);
                 }
-                else // New user is OK to register:
-                {
-                    logic.Register(model.Username,
-                                   model.Password,
-                                   model.FirstName,
-                                   model.LastName,
-                                   model.IdentityNumber,
-                                   model.Email,
-                                   model.BirthDate);
 
-                    FormsAuthentication.SetAuthCookie(model.Username, false); // Sets the user already logged in!
-                    return RedirectToAction("Index", "Home");
+                // Register the user
+                var result = await _usersService.RegisterAsync(model);
+
+                if (!result.Success)
+                {
+                    ModelState.AddModelError("", result.ErrorMessage);
+                    return View(model);
                 }
+
+                // Auto sign-in
+                Auth.SignIn(
+                    new Microsoft.Owin.Security.AuthenticationProperties { IsPersistent = false },
+                    result.Identity
+                );
+
+                return RedirectToAction("Index", "Home");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                ViewBag.ErrorMessage = "An error has occurred while register. please try again later.";
-                return View();
+                // Log error here (Serilog / NLog)
+                ModelState.AddModelError("", "Unexpected error occurred. Please try again later.");
+                return View(model);
             }
         }
 
-        /// <summary>
-        /// Page displays: A form to login a user.
-        /// </summary>
+        // ================================
+        // LOGIN (GET)
+        // ================================
         public ActionResult Login(string returnUrl)
         {
-            // If the user is already logged in, redirects him to his profile:
             if (User.Identity.IsAuthenticated)
                 return RedirectToAction("UserProfile");
 
-            ViewBag.ReturnUrl = SetReturnUrl(returnUrl);
-            return View();
+            ViewBag.ReturnUrl = DetermineReturnUrl(returnUrl);
+            return View(new LoginViewModel());
         }
 
-        /// <summary>
-        /// Page displays: A form to login a user. (POST)
-        /// </summary>
+        // ================================
+        // LOGIN (POST)
+        // ================================
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Login(LoginViewModel model, string returnUrl)
+        public async Task<ActionResult> Login(LoginViewModel model, string returnUrl)
         {
             if (!ModelState.IsValid)
             {
-                ViewBag.ReturnUrl = SetReturnUrl(returnUrl);
+                ViewBag.ReturnUrl = DetermineReturnUrl(returnUrl);
                 return View(model);
             }
 
             try
             {
-                // Checks if the login is OK:
-                if (logic.IsUserExist(model.Username, model.Password))
+                var authResult = await _usersService.AuthenticateAsync(model);
+
+                if (!authResult.Success)
                 {
-                    // Successful login!
-                    FormsAuthentication.SetAuthCookie(model.Username, model.RememberMe);
-                    return RedirectToReturnUrl(returnUrl);
+                    ModelState.AddModelError("", "Invalid username or password.");
+                    ViewBag.ReturnUrl = DetermineReturnUrl(returnUrl);
+                    return View(model);
                 }
 
-                // Login failed:
-                ViewBag.ReturnUrl = SetReturnUrl(returnUrl);
-                ViewBag.ErrorMessage = "Username or Password is incorrect.";
-                return View(model);
+                // Sign in
+                Auth.SignIn(
+                    new Microsoft.Owin.Security.AuthenticationProperties
+                    {
+                        IsPersistent = model.RememberMe
+                    },
+                    authResult.Identity
+                );
+
+                return RedirectToLocal(returnUrl);
             }
             catch (Exception)
             {
-                ViewBag.ErrorMessage = "An error has occurred while login. please try again later.";
-                return View();
+                ModelState.AddModelError("", "Login failed due to a system error.");
+                return View(model);
             }
         }
 
-        /// <summary>
-        /// Page performs: A logout operation to a logged in user.
-        /// </summary>
+        // ================================
+        // LOGOUT
+        // ================================
         [Authorize]
         public ActionResult Logout()
         {
-            FormsAuthentication.SignOut();
-            return RedirectToReturnUrl(null);
+            Auth.SignOut();
+            return RedirectToAction("Index", "Home");
         }
 
-        /// <summary>
-        /// Page displays: The user's profile details.
-        /// </summary>
+        // ================================
+        // PROFILE
+        // ================================
         [Authorize]
-        public ActionResult UserProfile()
+        public async Task<ActionResult> UserProfile()
         {
             try
             {
-                return View(logic.GetUserByUsername(User.Identity.Name));
+                var user = await _usersService.GetUserByUsernameAsync(User.Identity.Name);
+                return View(user);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ModelState.AddModelError("", "Failed to load profile.");
                 return View();
             }
         }
 
-        /// <summary>
-        /// Page displays: Forgotten password information page.
-        /// </summary>
+        // ================================
+        // FORGOT PASSWORD
+        // ================================
         public ActionResult ForgottenPassword()
         {
             return View();
         }
 
-        #region (Private) Action Helpers
-
-        /// <summary>
-        /// Sets the return URL after the Login, so that the user will be redirected to the correct last URL.
-        /// </summary>
-        /// <param name="returnUrl">The url from last session</param>
-        /// <returns>The last URL the user needs to be redirected to.</returns>
-        private string SetReturnUrl(string returnUrl)
+        // ================================
+        // PRIVATE HELPERS
+        // ================================
+        private string DetermineReturnUrl(string returnUrl)
         {
-            if (!string.IsNullOrEmpty(returnUrl)) // If there's already a return url, keeps on saving the URL
-            {
-                return returnUrl; // Returns the saved URL
-            }
-            else if (Request.UrlReferrer != null && !string.IsNullOrEmpty(Request.UrlReferrer.ToString())) // If there's a last request referrer
-            {
-                return Request.UrlReferrer.ToString(); // Returns the last URL
-            }
+            if (!string.IsNullOrEmpty(returnUrl))
+                return returnUrl;
 
-            // Default:
-            return "/Home/Index"; // HomePage
+            if (Request.UrlReferrer != null)
+                return Request.UrlReferrer.ToString();
+
+            return Url.Action("Index", "Home");
         }
 
-        /// <summary>
-        /// Redirects to the last URL the user came from, by the returnUrl.
-        /// </summary>
-        /// <param name="returnUrl">The last URL the user came from.</param>
-        /// <returns>Redirection to the last url according to the return URL string.</returns>
-        private ActionResult RedirectToReturnUrl(string returnUrl)
+        private ActionResult RedirectToLocal(string returnUrl)
         {
-            if (!string.IsNullOrEmpty(returnUrl)) // If there's a return url
-            {
+            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
                 return Redirect(returnUrl);
-            }
-            else if (Request.UrlReferrer != null && !string.IsNullOrEmpty(Request.UrlReferrer.ToString())) // If there's a last request referrer
-            {
-                return Redirect(Request.UrlReferrer.ToString());
-            }
 
-            // Default:
-            return RedirectToAction("Index", "Home"); // If there's nothing --> HomePage
+            return RedirectToAction("Index", "Home");
         }
-
-        #endregion
-
     }
 }
+

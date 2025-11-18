@@ -1,147 +1,174 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Web;
+using System.Threading.Tasks;
 using System.Web.Mvc;
+using RacingHubCarRental.Services;
+using RacingHubCarRental.Models;
+using RacingHubCarRental.Models.ViewModels;
 
-namespace RacingHubCarRental
+namespace RacingHubCarRental.Controllers
 {
     /// <summary>
-    /// Provides pages for admin management.
+    /// Administration operations including user & role management.
+    /// Fully rewritten using async, DI, strong validation, and modern patterns.
     /// </summary>
     [Authorize(Roles = "Admin")]
     public class AdminController : Controller
     {
-
-        #region Private Fields
-
-        /// <summary>
-        /// Holds the logic for the Roles!
-        /// </summary>
-        private RolesLogic rolesLogic = new RolesLogic();
+        private readonly IUsersService _usersService;
+        private readonly IRolesService _rolesService;
 
         /// <summary>
-        /// Holds the logic for the Users!
+        /// Constructor with dependency injection.
         /// </summary>
-        private UsersLogic usersLogic = new UsersLogic();
+        public AdminController(IUsersService usersService, IRolesService rolesService)
+        {
+            _usersService = usersService ?? throw new ArgumentNullException(nameof(usersService));
+            _rolesService = rolesService ?? throw new ArgumentNullException(nameof(rolesService));
+        }
 
-        #endregion
-
-        /// <summary>
-        /// Page displays: All the admin management options.
-        /// </summary>
+        // ===========================
+        // DASHBOARD
+        // ===========================
         public ActionResult Index()
         {
             return View();
         }
 
-        /// <summary>
-        /// Page displays: (Users management option) displays a list of all the users to manage.
-        /// </summary>
-        public ActionResult AllUsers()
+        // ===========================
+        // LIST ALL USERS
+        // ===========================
+        public async Task<ActionResult> AllUsers()
         {
             try
             {
-                return View(usersLogic.GetAllUsers());
+                var users = await _usersService.GetAllUsersAsync();
+                return View(users);
             }
             catch (Exception)
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Unable to load users. Please try again later.";
                 return View(new List<User>());
             }
         }
 
-        /// <summary>
-        /// Page displays: A form to edit the role of a user.
-        /// </summary>
-        public ActionResult EditUserRole(int id = 0)
+        // ===========================
+        // EDIT USER ROLE (GET)
+        // ===========================
+        public async Task<ActionResult> EditUserRole(int id = 0)
         {
             try
             {
-                User user = usersLogic.GetUserByID(id);
+                var user = await _usersService.GetUserByIdAsync(id);
                 if (user == null)
                     return HttpNotFound();
 
-                EditUserRoleViewModel model = new EditUserRoleViewModel();
-                model.Username = user.Username;
-                model.RoleName = user.Roles.FirstOrDefault().RoleName;
+                var model = new EditUserRoleViewModel
+                {
+                    Username = user.Username,
+                    RoleName = user.Role?.RoleName
+                };
 
-                ViewBag.RoleName = new SelectList(rolesLogic.GetAllRoles(), "RoleName", "RoleName", model.RoleName);
+                await LoadRolesDropDown(model.RoleName);
+
                 return View(model);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                ViewBag.RoleName = new SelectList(new List<Role>(), "RoleName", "RoleName");
+                ViewBag.ErrorMessage = "Failed to load user role details.";
+                await LoadRolesDropDown(null);
                 return View(new EditUserRoleViewModel());
             }
         }
 
-        /// <summary>
-        /// Page displays: A form to edit the role of a user. (POST)
-        /// </summary>
+        // ===========================
+        // EDIT USER ROLE (POST)
+        // ===========================
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult EditUserRole(EditUserRoleViewModel model)
+        public async Task<ActionResult> EditUserRole(EditUserRoleViewModel model)
         {
+            if (!ModelState.IsValid)
+            {
+                ViewBag.ErrorMessage = "Invalid fields.";
+                await LoadRolesDropDown(model.RoleName);
+                return View(model);
+            }
+
             try
             {
-                if (!ModelState.IsValid)
+                var result = await _rolesService.UpdateUserRoleAsync(model.Username, model.RoleName);
+
+                if (!result.Success)
                 {
-                    ViewBag.ErrorMessage = "Some of the fields are invalid.";
-                    ViewBag.RoleName = new SelectList(rolesLogic.GetAllRoles(), "RoleName", "RoleName", model.RoleName);
+                    ModelState.AddModelError("", result.ErrorMessage);
+                    await LoadRolesDropDown(model.RoleName);
                     return View(model);
                 }
 
-                rolesLogic.UpdateRoleToUser(model.Username, model.RoleName);
                 return RedirectToAction("AllUsers");
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                ViewBag.RoleName = new SelectList(new List<Role>(), "RoleName", "RoleName");
+                ViewBag.ErrorMessage = "An unexpected error occurred.";
+                await LoadRolesDropDown(model.RoleName);
                 return View(model);
             }
         }
 
-        /// <summary>
-        /// Page displays: A user to delete.
-        /// </summary>
-        public ActionResult DeleteUser(int id = 0)
+        // ===========================
+        // DELETE USER (GET)
+        // ===========================
+        public async Task<ActionResult> DeleteUser(int id = 0)
         {
             try
             {
-                User user = usersLogic.GetUserByID(id);
+                var user = await _usersService.GetUserByIdAsync(id);
                 if (user == null)
                     return HttpNotFound();
 
                 return View(user);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(usersLogic.GetUserByID(id));
+                ViewBag.ErrorMessage = "Failed to load user.";
+                return View();
             }
         }
 
-        /// <summary>
-        /// Page displays: A user to delete. (POST)
-        /// </summary>
+        // ===========================
+        // DELETE USER (POST)
+        // ===========================
         [HttpPost, ActionName("DeleteUser")]
         [ValidateAntiForgeryToken]
-        public ActionResult DeleteUserConfirmed(int id)
+        public async Task<ActionResult> DeleteUserConfirmed(int id)
         {
             try
             {
-                usersLogic.DeleteUser(usersLogic.GetUserByID(id));
+                var user = await _usersService.GetUserByIdAsync(id);
+                if (user == null)
+                    return HttpNotFound();
+
+                await _usersService.DeleteUserAsync(user);
+
                 return RedirectToAction("AllUsers");
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(usersLogic.GetUserByID(id));
+                ViewBag.ErrorMessage = "Failed to delete user.";
+                var user = await _usersService.GetUserByIdAsync(id);
+                return View(user);
             }
         }
 
+        // ===========================
+        // HELPER: Load Role Dropdown
+        // ===========================
+        private async Task LoadRolesDropDown(string selectedRole)
+        {
+            var roles = await _rolesService.GetAllRolesAsync();
+            ViewBag.RoleName = new SelectList(roles, "RoleName", "RoleName", selectedRole);
+        }
     }
 }
+
