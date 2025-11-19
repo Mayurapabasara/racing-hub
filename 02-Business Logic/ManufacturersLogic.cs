@@ -1,170 +1,285 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
-using System.Data.Entity; // Added for EntityState
+using System.Data.Entity;
 using System.Linq;
-using RacingHubCarRental.Interfaces; // Using the new interface
-using RacingHubCarRental.Services; // Using the new Query Service
+using System.Threading;
+using System.Threading.Tasks;
+using RacingHubCarRental.Interfaces;
+using RacingHubCarRental.Services;
 
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Represents the core business logic for the CRUD of the manufacturers, focusing on write operations.
-    /// Implements IManufacturersLogic.
+    /// Handles write-side logic for Manufacturer operations.
+    /// Fully rewritten to be async, testable, and contribution-friendly.
     /// </summary>
     public class ManufacturersLogic : BaseLogic, IManufacturersLogic
     {
-        // --- Private Validation Helpers (Granular commits here) ---
+        private readonly ManufacturerQueryService _queryService = new ManufacturerQueryService();
 
-        /// <summary>
-        /// Ensures the manufacturer object is not null.
-        /// </summary>
+        // =====================================================================
+        // VALIDATION HELPERS (small methods = more commits)
+        // =====================================================================
+
         private void ValidateManufacturer(Manufacturer manufacturer)
         {
             if (manufacturer == null)
-            {
-                throw new ArgumentNullException(nameof(manufacturer), "Manufacturer object cannot be null.");
-            }
+                throw new ArgumentNullException(nameof(manufacturer), "Manufacturer cannot be null.");
         }
 
-        /// <summary>
-        /// Validates the manufacturer name string for null or white space.
-        /// </summary>
-        private void ValidateManufacturerName(string manufacturerName)
+        private void ValidateManufacturerName(string name)
         {
-            if (string.IsNullOrWhiteSpace(manufacturerName))
-            {
-                throw new ArgumentException("Manufacturer name cannot be empty or whitespace.", nameof(manufacturerName));
-            }
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Manufacturer name cannot be empty.", nameof(name));
         }
 
-        // --- Core CRUD Operations ---
-        
-        // NOTE: We keep the read methods implemented to satisfy the IManufacturersLogic interface,
-        // but we'd delegate the heavy lifting to the Query Service in a real app.
-        private readonly ManufacturerQueryService _queryService = new ManufacturerQueryService();
 
-        public List<Manufacturer> GetAllManufacturers() => _queryService.GetOrderedManufacturers();
-        public Manufacturer GetManufacturerByID(int id) => _queryService.GetManufacturerById(id);
-        public bool IsManufacturerExists(string manufacturerName) => _queryService.CheckIfManufacturerExistsByName(manufacturerName);
+        // =====================================================================
+        // READ OPERATIONS (query-side delegation)
+        // =====================================================================
 
+        public List<Manufacturer> GetAllManufacturers() =>
+            _queryService.GetOrderedManufacturers();
+
+        public Manufacturer GetManufacturerByID(int id) =>
+            _queryService.GetManufacturerById(id);
+
+        public bool IsManufacturerExists(string manufacturerName) =>
+            _queryService.CheckIfManufacturerExistsByName(manufacturerName);
+
+
+        // =====================================================================
+        // ASYNC VERSIONS
+        // =====================================================================
+
+        public async Task<List<Manufacturer>> GetAllManufacturersAsync(CancellationToken token = default)
+        {
+            return await _queryService.GetOrderedManufacturersAsync(token);
+        }
+
+        public async Task<Manufacturer?> GetManufacturerByIdAsync(int id, CancellationToken token = default)
+        {
+            return await _queryService.GetManufacturerByIdAsync(id, token);
+        }
+
+        public async Task<bool> ManufacturerExistsAsync(string name, CancellationToken token = default)
+        {
+            return await _queryService.ManufacturerExistsByNameAsync(name, token);
+        }
+
+
+        // =====================================================================
+        // WRITE OPERATIONS — INSERT
+        // =====================================================================
 
         /// <summary>
-        /// Inserts a new manufacturer.
+        /// Inserts a new manufacturer (sync).
         /// </summary>
-        /// <param name="manufacturer">The manufacturer to insert.</param>
         public void InsertManufacturer(Manufacturer manufacturer)
         {
-            ValidateManufacturer(manufacturer); // Commit 1: Add object validation
-            ValidateManufacturerName(manufacturer.ManufacturerName); // Commit 2: Add name validation
+            ValidateManufacturer(manufacturer);
+            ValidateManufacturerName(manufacturer.ManufacturerName);
 
             DB.Manufacturers.Add(manufacturer);
-            DB.SaveChanges(); // Commit 3: Save changes
+            DB.SaveChanges(); // commit
         }
 
         /// <summary>
-        /// Updates a manufacturer.
+        /// Inserts a new manufacturer asynchronously.
         /// </summary>
-        /// <param name="manufacturer">The manufacturer to update.</param>
+        public async Task InsertManufacturerAsync(Manufacturer manufacturer, CancellationToken token = default)
+        {
+            ValidateManufacturer(manufacturer);
+            ValidateManufacturerName(manufacturer.ManufacturerName);
+
+            await SafeExecuteAsync(async () =>
+            {
+                DB.Manufacturers.Add(manufacturer);
+                await DB.SaveChangesAsync(token);
+            }, token);
+        }
+
+
+        // =====================================================================
+        // UPDATE OPERATIONS
+        // =====================================================================
+
         public void UpdateManufacturer(Manufacturer manufacturer)
         {
-            ValidateManufacturer(manufacturer); // Commit 1: Add validation
-            
+            ValidateManufacturer(manufacturer);
+
             DB.Entry(manufacturer).State = EntityState.Modified;
-            DB.SaveChanges(); // Commit 2: Save changes
+            DB.SaveChanges(); // commit
         }
 
-        // --- Deletion Helpers (Maximum Granularity for Collective Delete) ---
-
-        /// <summary>
-        /// Step 1 of collective delete: Deletes all Rentals related to this manufacturer.
-        /// </summary>
-        private void DeleteRelatedRentals(int manufacturerID)
+        public async Task UpdateManufacturerAsync(Manufacturer manufacturer, CancellationToken token = default)
         {
-            List<Rental> orders = DB.Rentals
-                .Where(r => r.FleetCar.CarModel.ManufacturerModel.Manufacturer.ManufacturerID == manufacturerID)
+            ValidateManufacturer(manufacturer);
+
+            await SafeExecuteAsync(async () =>
+            {
+                DB.Entry(manufacturer).State = EntityState.Modified;
+                await DB.SaveChangesAsync(token);
+            }, token);
+        }
+
+
+        // =====================================================================
+        // DELETE HELPERS (broken down for max commit granularity)
+        // =====================================================================
+
+        private void DeleteRelatedRentals(int id)
+        {
+            var rentals = DB.Rentals
+                .Where(r => r.FleetCar.CarModel.ManufacturerModel.Manufacturer.ManufacturerID == id)
                 .ToList();
 
-            if (orders.Any())
+            if (rentals.Any())
             {
-                DB.Rentals.RemoveRange(orders);
-                DB.SaveChanges(); // Commit opportunity: "Delete logic for Rentals."
+                DB.Rentals.RemoveRange(rentals);
+                DB.SaveChanges(); // commit point
             }
         }
 
-        /// <summary>
-        /// Step 2 of collective delete: Deletes all Fleet Cars related to this manufacturer.
-        /// </summary>
-        private void DeleteRelatedFleetCars(int manufacturerID)
+        private void DeleteRelatedFleetCars(int id)
         {
-            List<FleetCar> fleet = DB.FleetCars
-                .Where(f => f.CarModel.ManufacturerModel.Manufacturer.ManufacturerID == manufacturerID)
+            var fleet = DB.FleetCars
+                .Where(f => f.CarModel.ManufacturerModel.Manufacturer.ManufacturerID == id)
                 .ToList();
-            
+
             if (fleet.Any())
             {
                 DB.FleetCars.RemoveRange(fleet);
-                DB.SaveChanges(); // Commit opportunity: "Delete logic for FleetCars."
+                DB.SaveChanges(); // commit point
             }
         }
 
-        /// <summary>
-        /// Step 3 of collective delete: Deletes all Car Models related to this manufacturer.
-        /// </summary>
-        private void DeleteRelatedCarModels(int manufacturerID)
+        private void DeleteRelatedCarModels(int id)
         {
-            List<CarModel> carModels = DB.CarModels
-                .Where(c => c.ManufacturerModel.Manufacturer.ManufacturerID == manufacturerID)
+            var models = DB.CarModels
+                .Where(c => c.ManufacturerModel.Manufacturer.ManufacturerID == id)
                 .ToList();
 
-            if (carModels.Any())
+            if (models.Any())
             {
-                DB.CarModels.RemoveRange(carModels);
-                DB.SaveChanges(); // Commit opportunity: "Delete logic for CarModels."
+                DB.CarModels.RemoveRange(models);
+                DB.SaveChanges(); // commit point
             }
         }
 
-        /// <summary>
-        /// Step 4 of collective delete: Deletes all Manufacturer Models (sub-models) related to this manufacturer.
-        /// </summary>
-        private void DeleteRelatedManufacturerModels(int manufacturerID)
+        private void DeleteRelatedManufacturerModels(int id)
         {
-            List<ManufacturerModel> mfrModels = DB.ManufacturerModels
-                .Where(m => m.Manufacturer.ManufacturerID == manufacturerID)
+            var mm = DB.ManufacturerModels
+                .Where(m => m.Manufacturer.ManufacturerID == id)
                 .ToList();
-            
-            if (mfrModels.Any())
+
+            if (mm.Any())
             {
-                DB.ManufacturerModels.RemoveRange(mfrModels);
-                DB.SaveChanges(); // Commit opportunity: "Delete logic for ManufacturerModels."
+                DB.ManufacturerModels.RemoveRange(mm);
+                DB.SaveChanges(); // commit point
             }
         }
 
 
-        /// <summary>
-        /// Deletes a manufacturer! Granularly handles collective deletion cascade.
-        /// </summary>
-        /// <param name="manufacturer">The manufacturer to delete.</param>
-        /// <param name="isCollective">Indicator if to perform a collective delete, if to delete all it's related data.</param>
+        // =====================================================================
+        // DELETE OPERATIONS
+        // =====================================================================
+
         public void DeleteManufacturer(Manufacturer manufacturer, bool isCollective = false)
         {
-            ValidateManufacturer(manufacturer); // Commit 1: Validation
+            ValidateManufacturer(manufacturer);
 
-            // Checks if to perform a collective delete, using granular helpers:
             if (isCollective)
             {
-                int id = manufacturer.ManufacturerID;
-                
-                // Each call is a separate, testable step.
-                DeleteRelatedRentals(id);          // Commit 2
-                DeleteRelatedFleetCars(id);        // Commit 3
-                DeleteRelatedCarModels(id);        // Commit 4
-                DeleteRelatedManufacturerModels(id); // Commit 5
+                var id = manufacturer.ManufacturerID;
+                DeleteRelatedRentals(id);
+                DeleteRelatedFleetCars(id);
+                DeleteRelatedCarModels(id);
+                DeleteRelatedManufacturerModels(id);
             }
-            
-            // Final deletion of the parent entity:
+
             DB.Manufacturers.Remove(manufacturer);
-            DB.SaveChanges(); // Commit 6: Final save
+            DB.SaveChanges(); // commit
+        }
+
+        public async Task DeleteManufacturerAsync(Manufacturer manufacturer, bool isCollective, CancellationToken token = default)
+        {
+            ValidateManufacturer(manufacturer);
+
+            await SafeExecuteAsync(async () =>
+            {
+                var id = manufacturer.ManufacturerID;
+
+                if (isCollective)
+                {
+                    await DeleteRelatedRentalsAsync(id, token);
+                    await DeleteRelatedFleetCarsAsync(id, token);
+                    await DeleteRelatedCarModelsAsync(id, token);
+                    await DeleteRelatedManufacturerModelsAsync(id, token);
+                }
+
+                DB.Manufacturers.Remove(manufacturer);
+                await DB.SaveChangesAsync(token);
+
+            }, token);
+        }
+
+
+        // =====================================================================
+        // ASYNC DELETE HELPERS
+        // =====================================================================
+
+        private async Task DeleteRelatedRentalsAsync(int id, CancellationToken token)
+        {
+            var rentals = await DB.Rentals
+                .Where(r => r.FleetCar.CarModel.ManufacturerModel.Manufacturer.ManufacturerID == id)
+                .ToListAsync(token);
+
+            if (rentals.Any())
+            {
+                DB.Rentals.RemoveRange(rentals);
+                await DB.SaveChangesAsync(token);
+            }
+        }
+
+        private async Task DeleteRelatedFleetCarsAsync(int id, CancellationToken token)
+        {
+            var fleet = await DB.FleetCars
+                .Where(f => f.CarModel.ManufacturerModel.Manufacturer.ManufacturerID == id)
+                .ToListAsync(token);
+
+            if (fleet.Any())
+            {
+                DB.FleetCars.RemoveRange(fleet);
+                await DB.SaveChangesAsync(token);
+            }
+        }
+
+        private async Task DeleteRelatedCarModelsAsync(int id, CancellationToken token)
+        {
+            var models = await DB.CarModels
+                .Where(c => c.ManufacturerModel.Manufacturer.ManufacturerID == id)
+                .ToListAsync(token);
+
+            if (models.Any())
+            {
+                DB.CarModels.RemoveRange(models);
+                await DB.SaveChangesAsync(token);
+            }
+        }
+
+        private async Task DeleteRelatedManufacturerModelsAsync(int id, CancellationToken token)
+        {
+            var mm = await DB.ManufacturerModels
+                .Where(m => m.Manufacturer.ManufacturerID == id)
+                .ToListAsync(token);
+
+            if (mm.Any())
+            {
+                DB.ManufacturerModels.RemoveRange(mm);
+                await DB.SaveChangesAsync(token);
+            }
         }
     }
 }
+

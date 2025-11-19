@@ -1,105 +1,229 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Data.Entity;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Represents the logic for the CRUD of the orders (rentals).
+    /// Core business logic for handling Rentals (Orders).
+    /// Modernized to async, SOLID, and granular commit approach.
     /// </summary>
     public class OrdersLogic : BaseLogic
     {
+        // =====================================================================
+        // VALIDATION HELPERS (each can be a separate commit)
+        // =====================================================================
 
-        /// <summary>
-        /// Gets all the rentals.
-        /// </summary>
-        /// <returns>List of all the rentals.</returns>
-        public List<Rental> GetAllRentals()
+        private void ValidateId(int id)
         {
-            return DB.Rentals.Include(c => c.FleetCar).ToList();
+            if (id <= 0)
+                throw new ArgumentException("Invalid rental ID.", nameof(id));
         }
 
-        /// <summary>
-        /// Gets all the rentals that their car can be returned.
-        /// </summary>
-        /// <returns>List of all the rentals that their car can be returned.</returns>
-        public List<Rental> GetRentalsToCarReturn()
+        private void ValidateString(string value, string param)
         {
-            return DB.Rentals.Include(c => c.FleetCar)
-                             .Where(r => r.ActualReturnDate == null)
-                             .OrderBy(r => r.ReturnDate)
-                             .ToList();
+            if (string.IsNullOrWhiteSpace(value))
+                throw new ArgumentException($"{param} cannot be empty.", param);
         }
 
-        /// <summary>
-        /// Gets all the rentals for a user, history of user's orders.
-        /// </summary>
-        /// <param name="username">The username to get his rentals.</param>
-        /// <returns>Returns a list of all the user's rentals.</returns>
+        private void ValidateUser(User user)
+        {
+            if (user == null)
+                throw new InvalidOperationException("User does not exist.");
+        }
+
+        // =====================================================================
+        // QUERY HELPERS
+        // =====================================================================
+
+        private IQueryable<Rental> BaseQuery()
+        {
+            return DB.Rentals.Include(r => r.FleetCar);
+        }
+
+        private IQueryable<Rental> OrderedHistory(IQueryable<Rental> q)
+        {
+            return q.OrderByDescending(r => r.RentalID);
+        }
+
+        private IQueryable<Rental> PendingReturns(IQueryable<Rental> q)
+        {
+            return q.Where(r => r.ActualReturnDate == null)
+                    .OrderBy(r => r.ReturnDate);
+        }
+
+
+        // =====================================================================
+        // SYNC API (for backward compatibility)
+        // =====================================================================
+
+        public List<Rental> GetAllRentals() =>
+            BaseQuery().ToList();
+
+        public List<Rental> GetRentalsToCarReturn() =>
+            PendingReturns(BaseQuery()).ToList();
+
         public List<Rental> GetRentalsForUser(string username)
         {
-            if (string.IsNullOrWhiteSpace(username))
-                throw new ArgumentNullException();
+            ValidateString(username, nameof(username));
 
-            return DB.Rentals.Where(r => r.User.Username.ToLower() == username.ToLower())
-                             .OrderByDescending(r => r.RentalID)
-                             .ToList();
+            return BaseQuery()
+                .Where(r => r.User.Username.ToLower() == username.ToLower())
+                .OrderByDescending(r => r.RentalID)
+                .ToList();
         }
 
-        /// <summary>
-        /// Gets a rental by ID.
-        /// </summary>
-        /// <param name="id">The ID of the rental.</param>
-        /// <returns>The rental details.</returns>
         public Rental GetRentalByID(int id)
         {
+            ValidateId(id);
             return DB.Rentals.Find(id);
         }
 
-        /// <summary>
-        /// Inserts a new rental.
-        /// </summary>
-        /// <param name="licenseNumber">The identifier of the car.</param>
-        /// <param name="startDate">The start date of the rental.</param>
-        /// <param name="returnDate">The return date of the rental.</param>
-        /// <param name="username">The username of the user that orders the car.</param>
-        /// <returns>The order number of the rental (ID).</returns>
+
+        // =====================================================================
+        // ASYNC API (modern recommended implementation)
+        // =====================================================================
+
+        public async Task<List<Rental>> GetAllRentalsAsync(CancellationToken token = default)
+        {
+            return await SafeExecuteAsync(async () =>
+            {
+                return await BaseQuery().ToListAsync(token);
+            }, token);
+        }
+
+        public async Task<List<Rental>> GetRentalsToCarReturnAsync(CancellationToken token = default)
+        {
+            return await SafeExecuteAsync(async () =>
+            {
+                return await PendingReturns(BaseQuery()).ToListAsync(token);
+            }, token);
+        }
+
+        public async Task<List<Rental>> GetRentalsForUserAsync(string username, CancellationToken token = default)
+        {
+            ValidateString(username, nameof(username));
+
+            return await SafeExecuteAsync(async () =>
+            {
+                return await OrderedHistory(BaseQuery()
+                    .Where(r => r.User.Username.ToLower() == username.ToLower()))
+                    .ToListAsync(token);
+            }, token);
+        }
+
+        public async Task<Rental?> GetRentalByIdAsync(int id, CancellationToken token = default)
+        {
+            ValidateId(id);
+
+            return await SafeExecuteAsync(async () =>
+            {
+                return await DB.Rentals.FindAsync(token, id);
+            }, token);
+        }
+
+
+        // =====================================================================
+        // INSERT RENTAL
+        // =====================================================================
+
         public int InsertRental(string licenseNumber, DateTime startDate, DateTime returnDate, string username)
         {
-            if (string.IsNullOrWhiteSpace(licenseNumber) || string.IsNullOrWhiteSpace(username))
-                throw new ArgumentNullException();
+            ValidateString(licenseNumber, nameof(licenseNumber));
+            ValidateString(username, nameof(username));
 
-            // Creates the rental object:
-            Rental rental = new Rental();
-            rental.LicensePlate = licenseNumber;
-            rental.PickUpDate = startDate;
-            rental.ReturnDate = returnDate;
-            rental.UserID = DB.Users.Where(u => u.Username.ToLower() == username.ToLower()).FirstOrDefault().UserID;
+            var user = DB.Users.FirstOrDefault(u => u.Username.ToLower() == username.ToLower());
+            ValidateUser(user);
+
+            var rental = new Rental
+            {
+                LicensePlate = licenseNumber,
+                PickUpDate = startDate,
+                ReturnDate = returnDate,
+                UserID = user.UserID
+            };
 
             DB.Rentals.Add(rental);
             DB.SaveChanges();
 
-            // Gets the rental values after inserted to the DB, in order to return the order number (ID):
             DB.Entry(rental).GetDatabaseValues();
             return rental.RentalID;
         }
 
-        /// <summary>
-        /// Updates the actual return date, when a car is returned.
-        /// </summary>
-        /// <param name="rentalID">The identifier of the rental. (Receipt Number).</param>
+        public async Task<int> InsertRentalAsync(
+            string licenseNumber,
+            DateTime startDate,
+            DateTime returnDate,
+            string username,
+            CancellationToken token = default)
+        {
+            ValidateString(licenseNumber, nameof(licenseNumber));
+            ValidateString(username, nameof(username));
+
+            return await SafeExecuteAsync(async () =>
+            {
+                var user = await DB.Users
+                    .FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower(), token);
+
+                ValidateUser(user);
+
+                Rental rental = new Rental
+                {
+                    LicensePlate = licenseNumber,
+                    PickUpDate = startDate,
+                    ReturnDate = returnDate,
+                    UserID = user.UserID
+                };
+
+                DB.Rentals.Add(rental);
+                await DB.SaveChangesAsync(token);
+
+                await DB.Entry(rental).ReloadAsync(token);
+                return rental.RentalID;
+
+            }, token);
+        }
+
+
+
+        // =====================================================================
+        // UPDATE RETURN DATE
+        // =====================================================================
+
         public void UpdateCarReturn(int rentalID)
         {
-            Rental rental = this.GetRentalByID(rentalID); // Gets the rental object from the rentalID.
-            rental.ActualReturnDate = DateTime.Today; // Sets the actual return date to today's date.
+            ValidateId(rentalID);
+
+            var rental = DB.Rentals.Find(rentalID);
+            if (rental == null)
+                throw new InvalidOperationException("Rental not found.");
+
+            rental.ActualReturnDate = DateTime.Today;
 
             DB.Entry(rental).State = EntityState.Modified;
             DB.SaveChanges();
         }
 
+        public async Task UpdateCarReturnAsync(int rentalID, CancellationToken token = default)
+        {
+            ValidateId(rentalID);
+
+            await SafeExecuteAsync(async () =>
+            {
+                var rental = await DB.Rentals.FindAsync(token, rentalID);
+                if (rental == null)
+                    throw new InvalidOperationException("Rental not found.");
+
+                rental.ActualReturnDate = DateTime.Today;
+
+                DB.Entry(rental).State = EntityState.Modified;
+                await DB.SaveChangesAsync(token);
+
+            }, token);
+        }
     }
 }
+
