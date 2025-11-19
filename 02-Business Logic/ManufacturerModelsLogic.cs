@@ -1,150 +1,279 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Data.Entity;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Represents the logic for the CRUD operations of the manufacturer models.
-    /// This class uses Entity Framework to interact with the database context.
+    /// Provides asynchronous CRUD operations and utility functions for ManufacturerModel entities.
+    /// Uses BaseLogic for shared DB context, safe-execution, and logging mechanisms.
     /// </summary>
     public class ManufacturerModelsLogic : BaseLogic
     {
-        // --- READ Operations ---
+        // ============================================================
+        // VALIDATION
+        // ============================================================
 
-        /// <summary>
-        /// Retrieves all car manufacturers from the database, ordered by name.
-        /// </summary>
-        /// <returns>A <see cref="List{Manufacturer}"/> containing all manufacturers.</returns>
-        public List<Manufacturer> GetAllManufacturers() =>
-            DB.Manufacturers
-                .OrderBy(m => m.ManufacturerName)
-                .ToList();
-
-        /// <summary>
-        /// Retrieves all manufacturer models, including the related Manufacturer entity.
-        /// Results are ordered by manufacturer name, then by model name.
-        /// </summary>
-        /// <returns>A <see cref="List{ManufacturerModel}"/> containing all car models.</returns>
-        public List<ManufacturerModel> GetAllManufacturerModels() =>
-            DB.ManufacturerModels
-                .Include(mm => mm.Manufacturer)
-                .OrderBy(mm => mm.Manufacturer.ManufacturerName)
-                .ThenBy(mm => mm.ManufacturerModelName)
-                .ToList();
-
-        /// <summary>
-        /// Retrieves manufacturer models associated with a specific manufacturer ID.
-        /// </summary>
-        /// <param name="manufacturerID">The ID of the manufacturer.</param>
-        /// <returns>A <see cref="List{ManufacturerModel}"/> filtered by the given ID, ordered by name.</returns>
-        public List<ManufacturerModel> GetModelsForManufacturer(int manufacturerID) =>
-            DB.ManufacturerModels
-                .Where(mm => mm.Manufacturer.ManufacturerID == manufacturerID)
-                .OrderBy(mm => mm.Manufacturer.ManufacturerName)
-                .ThenBy(mm => mm.ManufacturerModelName)
-                .ToList();
-
-        /// <summary>
-        /// Retrieves a single manufacturer model by its primary key ID.
-        /// </summary>
-        /// <param name="id">The unique ID of the manufacturer model.</param>
-        /// <returns>The <see cref="ManufacturerModel"/> entity or null if not found.</returns>
-        public ManufacturerModel GetManufacturerModelByID(int id) =>
-            DB.ManufacturerModels.Find(id);
-
-
-        // --- WRITE Operations ---
-
-        /// <summary>
-        /// Inserts a new manufacturer model into the database.
-        /// </summary>
-        /// <param name="manufacturerModel">The manufacturer model entity to insert.</param>
-        /// <exception cref="ArgumentNullException">Thrown if the provided model is null.</exception>
-        public void InsertManufacturerModel(ManufacturerModel manufacturerModel)
+        protected void Validate(ManufacturerModel model)
         {
-            if (manufacturerModel == null)
-                throw new ArgumentNullException(nameof(manufacturerModel));
-
-            DB.ManufacturerModels.Add(manufacturerModel);
-            DB.SaveChanges();
+            if (model == null)
+                throw new ArgumentNullException(nameof(model), "ManufacturerModel cannot be null.");
         }
 
-        /// <summary>
-        /// Updates an existing manufacturer model in the database.
-        /// </summary>
-        /// <param name="manufacturerModel">The detached manufacturer model entity with updated values.</param>
-        /// <exception cref="ArgumentNullException">Thrown if the provided model is null.</exception>
-        public void UpdateManufacturerModel(ManufacturerModel manufacturerModel)
+        protected void ValidateId(int id)
         {
-            if (manufacturerModel == null)
-                throw new ArgumentNullException(nameof(manufacturerModel));
-
-            DB.Entry(manufacturerModel).State = EntityState.Modified;
-            DB.SaveChanges();
+            if (id <= 0)
+                throw new ArgumentException("Invalid ManufacturerModel ID.", nameof(id));
         }
 
-        /// <summary>
-        /// Deletes a manufacturer model, optionally performing a collective delete of related entities (cascading delete).
-        /// </summary>
-        /// <param name="manufacturerModel">The manufacturer model to delete.</param>
-        /// <param name="isCollective">If <c>true</c>, related Rentals, FleetCars, and CarModels are also deleted.</param>
-        /// <exception cref="ArgumentNullException">Thrown if the provided model is null.</exception>
-        public void DeleteManufacturerModel(ManufacturerModel manufacturerModel, bool isCollective = false)
-        {
-            if (manufacturerModel == null)
-                throw new ArgumentNullException(nameof(manufacturerModel));
+        // ============================================================
+        // QUERY HELPERS
+        // ============================================================
 
-            // Perform collective (cascading) delete of dependent data if requested.
-            if (isCollective)
+        private IQueryable<ManufacturerModel> QueryBase()
+        {
+            return DB.ManufacturerModels
+                     .Include(mm => mm.Manufacturer);
+        }
+
+        private IQueryable<ManufacturerModel> Ordered(IQueryable<ManufacturerModel> query)
+        {
+            return query
+                .OrderBy(mm => mm.Manufacturer.ManufacturerName)
+                .ThenBy(mm => mm.ManufacturerModelName);
+        }
+
+        // ============================================================
+        // MANUFACTURERS (Read-only Helper)
+        // ============================================================
+
+        public async Task<List<Manufacturer>> GetAllManufacturersAsync(CancellationToken token = default)
+        {
+            return await SafeExecuteAsync(async () =>
             {
-                var modelId = manufacturerModel.ManufacturerModelID;
-
-                // 1. Rentals: Delete all rentals related to this manufacturer model.
-                var rentalsToDelete = DB.Rentals
-                    .Where(r => r.FleetCar.CarModel.ManufacturerModel.ManufacturerModelID == modelId);
-
-                DB.Rentals.RemoveRange(rentalsToDelete);
-
-                // 2. FleetCars: Delete all fleet cars related to this manufacturer model.
-                var fleetCarsToDelete = DB.FleetCars
-                    .Where(f => f.CarModel.ManufacturerModel.ManufacturerModelID == modelId);
-
-                DB.FleetCars.RemoveRange(fleetCarsToDelete);
-
-                // 3. CarModels: Delete all car models related to this manufacturer model.
-                var carModelsToDelete = DB.CarModels
-                    .Where(c => c.ManufacturerModel.ManufacturerModelID == modelId);
-
-                DB.CarModels.RemoveRange(carModelsToDelete);
-            }
-
-            // Finally, delete the manufacturer model itself.
-            DB.ManufacturerModels.Remove(manufacturerModel);
-            DB.SaveChanges();
+                return await DB.Manufacturers
+                    .OrderBy(m => m.ManufacturerName)
+                    .ToListAsync(token);
+            }, token);
         }
 
-        // --- Utility Operations ---
+        // ============================================================
+        // READ OPERATIONS
+        // ============================================================
 
-        /// <summary>
-        /// Checks if a manufacturer model with the same name and manufacturer ID already exists.
-        /// </summary>
-        /// <param name="manufacturerModel">The manufacturer model entity to check for existence.</param>
-        /// <returns><c>true</c> if a matching model exists; otherwise, <c>false</c>.</returns>
-        /// <exception cref="ArgumentNullException">Thrown if the provided model is null.</exception>
-        public bool IsManufacturerModelExists(ManufacturerModel manufacturerModel)
+        public async Task<List<ManufacturerModel>> GetAllManufacturerModelsAsync(CancellationToken token = default)
         {
-            if (manufacturerModel == null)
-                throw new ArgumentNullException(nameof(manufacturerModel));
+            return await SafeExecuteAsync(async () =>
+            {
+                return await Ordered(QueryBase()).ToListAsync(token);
+            }, token);
+        }
+
+        public ManufacturerModel GetManufacturerModelByID(int id)
+        {
+            ValidateId(id);
+            return DB.ManufacturerModels.Find(id);
+        }
+
+        public async Task<ManufacturerModel?> GetManufacturerModelByIdAsync(int id, CancellationToken token = default)
+        {
+            ValidateId(id);
+
+            return await SafeExecuteAsync(async () =>
+            {
+                return await QueryBase()
+                    .FirstOrDefaultAsync(m => m.ManufacturerModelID == id, token);
+            }, token);
+        }
+
+        public async Task<List<ManufacturerModel>> GetModelsForManufacturerAsync(
+            int manufacturerId,
+            CancellationToken token = default)
+        {
+            ValidateId(manufacturerId);
+
+            return await SafeExecuteAsync(async () =>
+            {
+                var query = QueryBase()
+                    .Where(mm => mm.Manufacturer.ManufacturerID == manufacturerId);
+
+                return await Ordered(query).ToListAsync(token);
+            }, token);
+        }
+
+        // ============================================================
+        // WRITE OPERATIONS
+        // ============================================================
+
+        public async Task InsertManufacturerModelAsync(ManufacturerModel model, CancellationToken token = default)
+        {
+            Validate(model);
+
+            await SafeExecuteAsync(async () =>
+            {
+                DB.ManufacturerModels.Add(model);
+                await SaveAsync(token);
+            }, token);
+        }
+
+        public async Task UpdateManufacturerModelAsync(ManufacturerModel model, CancellationToken token = default)
+        {
+            Validate(model);
+
+            await SafeExecuteAsync(async () =>
+            {
+                DB.Entry(model).State = EntityState.Modified;
+                await SaveAsync(token);
+            }, token);
+        }
+
+        // ============================================================
+        // DELETE HELPERS
+        // ============================================================
+
+        private async Task DeleteRelatedRentalsAsync(int modelId, CancellationToken token)
+        {
+            var rentals = await DB.Rentals
+                .Where(r => r.FleetCar.CarModel.ManufacturerModelID == modelId)
+                .ToListAsync(token);
+
+            if (rentals.Any())
+            {
+                DB.Rentals.RemoveRange(rentals);
+                await SaveAsync(token);
+            }
+        }
+
+        private async Task DeleteRelatedFleetCarsAsync(int modelId, CancellationToken token)
+        {
+            var fleetCars = await DB.FleetCars
+                .Where(f => f.CarModel.ManufacturerModelID == modelId)
+                .ToListAsync(token);
+
+            if (fleetCars.Any())
+            {
+                DB.FleetCars.RemoveRange(fleetCars);
+                await SaveAsync(token);
+            }
+        }
+
+        private async Task DeleteRelatedCarModelsAsync(int modelId, CancellationToken token)
+        {
+            var relatedCars = await DB.CarModels
+                .Where(c => c.ManufacturerModelID == modelId)
+                .ToListAsync(token);
+
+            if (relatedCars.Any())
+            {
+                DB.CarModels.RemoveRange(relatedCars);
+                await SaveAsync(token);
+            }
+        }
+
+        // ============================================================
+        // DELETE OPERATION
+        // ============================================================
+
+        public async Task DeleteManufacturerModelAsync(
+            ManufacturerModel model,
+            bool collective = false,
+            CancellationToken token = default)
+        {
+            Validate(model);
+
+            await SafeExecuteAsync(async () =>
+            {
+                var modelId = model.ManufacturerModelID;
+
+                if (collective)
+                {
+                    await DeleteRelatedRentalsAsync(modelId, token);
+                    await DeleteRelatedFleetCarsAsync(modelId, token);
+                    await DeleteRelatedCarModelsAsync(modelId, token);
+                }
+
+                DB.ManufacturerModels.Remove(model);
+                await SaveAsync(token);
+            }, token);
+        }
+
+        // ============================================================
+        // EXISTENCE CHECK
+        // ============================================================
+
+        public async Task<bool> IsManufacturerModelExistsAsync(ManufacturerModel model, CancellationToken token = default)
+        {
+            Validate(model);
+
+            return await SafeExecuteAsync(async () =>
+            {
+                return await DB.ManufacturerModels.AnyAsync(m =>
+                    m.ManufacturerModelName == model.ManufacturerModelName &&
+                    m.ManufacturerID == model.ManufacturerID, token);
+            }, token);
+        }
+
+        // ============================================================
+        // LEGACY SYNC API (Optional backward compatibility)
+        // ============================================================
+
+        public List<Manufacturer> GetAllManufacturers()
+            => DB.Manufacturers.OrderBy(m => m.ManufacturerName).ToList();
+
+        public List<ManufacturerModel> GetAllManufacturerModels()
+            => Ordered(QueryBase()).ToList();
+
+        public List<ManufacturerModel> GetModelsForManufacturer(int manufacturerId)
+            => Ordered(QueryBase()
+                .Where(mm => mm.Manufacturer.ManufacturerID == manufacturerId))
+                .ToList();
+
+        public bool IsManufacturerModelExists(ManufacturerModel model)
+        {
+            Validate(model);
 
             return DB.ManufacturerModels.Any(m =>
-                m.ManufacturerModelName == manufacturerModel.ManufacturerModelName &&
-                m.Manufacturer.ManufacturerID == manufacturerModel.ManufacturerID);
+                m.ManufacturerModelName == model.ManufacturerModelName &&
+                m.ManufacturerID == model.ManufacturerID);
         }
 
+        public void InsertManufacturerModel(ManufacturerModel model)
+        {
+            Validate(model);
+            DB.ManufacturerModels.Add(model);
+            Save();
+        }
+
+        public void UpdateManufacturerModel(ManufacturerModel model)
+        {
+            Validate(model);
+            DB.Entry(model).State = EntityState.Modified;
+            Save();
+        }
+
+        public void DeleteManufacturerModel(ManufacturerModel model, bool collective = false)
+        {
+            Validate(model);
+            var id = model.ManufacturerModelID;
+
+            if (collective)
+            {
+                var rentals = DB.Rentals.Where(r => r.FleetCar.CarModel.ManufacturerModelID == id);
+                DB.Rentals.RemoveRange(rentals);
+
+                var fleet = DB.FleetCars.Where(f => f.CarModel.ManufacturerModelID == id);
+                DB.FleetCars.RemoveRange(fleet);
+
+                var cars = DB.CarModels.Where(c => c.ManufacturerModelID == id);
+                DB.CarModels.RemoveRange(cars);
+            }
+
+            DB.ManufacturerModels.Remove(model);
+            Save();
+        }
     }
 }
+
