@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace RacingHubCarRental
 {
@@ -12,7 +7,6 @@ namespace RacingHubCarRental
     {
         public class FleetCarMetadata
         {
-
             [Display(Name = "License Plate")]
             [Required(ErrorMessage = "License Plate is required.")]
             [StringLength(7, ErrorMessage = "Maximum length is 7 characters.")]
@@ -24,6 +18,7 @@ namespace RacingHubCarRental
 
             [Display(Name = "Current Mileage")]
             [Required(ErrorMessage = "Current Mileage is required.")]
+            [Range(0, int.MaxValue, ErrorMessage = "Mileage must be a positive number.")]
             public int CurrentMileage { get; set; }
 
             [Display(Name = "Image")]
@@ -33,7 +28,7 @@ namespace RacingHubCarRental
             [Display(Name = "Is Proper")]
             [Required(ErrorMessage = "Propriety is required.")]
             public bool IsProper { get; set; }
-
         }
     }
 }
+
