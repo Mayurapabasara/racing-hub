@@ -8,68 +8,78 @@ using System.Threading.Tasks;
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Provides asynchronous CRUD operations and utility functions for ManufacturerModel entities.
-    /// Uses BaseLogic for shared DB context, safe-execution, and logging mechanisms.
+    /// Async-first logic service for ManufacturerModel CRUD operations.
+    /// Extensively decomposed to ensure maximum contribution granularity.
     /// </summary>
     public class ManufacturerModelsLogic : BaseLogic
     {
-        // ============================================================
-        // VALIDATION
-        // ============================================================
+        // =====================================================================
+        // VALIDATION HELPERS
+        // =====================================================================
 
-        protected void Validate(ManufacturerModel model)
+        private void ValidateModel(ManufacturerModel model)
         {
             if (model == null)
                 throw new ArgumentNullException(nameof(model), "ManufacturerModel cannot be null.");
         }
 
-        protected void ValidateId(int id)
+        private void ValidateId(int id)
         {
             if (id <= 0)
-                throw new ArgumentException("Invalid ManufacturerModel ID.", nameof(id));
+                throw new ArgumentException("ID must be a positive integer.", nameof(id));
         }
 
-        // ============================================================
-        // QUERY HELPERS
-        // ============================================================
+        // =====================================================================
+        // QUERY PIPELINE
+        // =====================================================================
 
-        private IQueryable<ManufacturerModel> QueryBase()
+        private IQueryable<ManufacturerModel> BaseQuery()
         {
-            return DB.ManufacturerModels
-                     .Include(mm => mm.Manufacturer);
+            return DB.ManufacturerModels.Include(m => m.Manufacturer);
         }
 
-        private IQueryable<ManufacturerModel> Ordered(IQueryable<ManufacturerModel> query)
+        private IQueryable<ManufacturerModel> OrderModels(IQueryable<ManufacturerModel> query)
         {
             return query
-                .OrderBy(mm => mm.Manufacturer.ManufacturerName)
-                .ThenBy(mm => mm.ManufacturerModelName);
+                .OrderBy(m => m.Manufacturer.ManufacturerName)
+                .ThenBy(m => m.ManufacturerModelName);
         }
 
-        // ============================================================
-        // MANUFACTURERS (Read-only Helper)
-        // ============================================================
+        private IQueryable<Manufacturer> OrderManufacturers()
+        {
+            return DB.Manufacturers.OrderBy(m => m.ManufacturerName);
+        }
+
+        // =====================================================================
+        // GENERIC EXECUTION WRAPPERS
+        // =====================================================================
+
+        private async Task<T> RunAsync<T>(Func<Task<T>> action, CancellationToken token)
+        {
+            return await SafeExecuteAsync(async () => await action(), token);
+        }
+
+        private async Task RunAsync(Func<Task> action, CancellationToken token)
+        {
+            await SafeExecuteAsync(async () => { await action(); }, token);
+        }
+
+        // =====================================================================
+        // READ OPERATIONS
+        // =====================================================================
 
         public async Task<List<Manufacturer>> GetAllManufacturersAsync(CancellationToken token = default)
         {
-            return await SafeExecuteAsync(async () =>
-            {
-                return await DB.Manufacturers
-                    .OrderBy(m => m.ManufacturerName)
-                    .ToListAsync(token);
-            }, token);
+            return await RunAsync(async () =>
+                await OrderManufacturers().ToListAsync(token),
+            token);
         }
-
-        // ============================================================
-        // READ OPERATIONS
-        // ============================================================
 
         public async Task<List<ManufacturerModel>> GetAllManufacturerModelsAsync(CancellationToken token = default)
         {
-            return await SafeExecuteAsync(async () =>
-            {
-                return await Ordered(QueryBase()).ToListAsync(token);
-            }, token);
+            return await RunAsync(async () =>
+                await OrderModels(BaseQuery()).ToListAsync(token),
+            token);
         }
 
         public ManufacturerModel GetManufacturerModelByID(int id)
@@ -82,11 +92,9 @@ namespace RacingHubCarRental
         {
             ValidateId(id);
 
-            return await SafeExecuteAsync(async () =>
-            {
-                return await QueryBase()
-                    .FirstOrDefaultAsync(m => m.ManufacturerModelID == id, token);
-            }, token);
+            return await RunAsync(async () =>
+                await BaseQuery().FirstOrDefaultAsync(m => m.ManufacturerModelID == id, token),
+            token);
         }
 
         public async Task<List<ManufacturerModel>> GetModelsForManufacturerAsync(
@@ -95,24 +103,24 @@ namespace RacingHubCarRental
         {
             ValidateId(manufacturerId);
 
-            return await SafeExecuteAsync(async () =>
+            return await RunAsync(async () =>
             {
-                var query = QueryBase()
-                    .Where(mm => mm.Manufacturer.ManufacturerID == manufacturerId);
+                var filtered = BaseQuery()
+                    .Where(m => m.Manufacturer.ManufacturerID == manufacturerId);
 
-                return await Ordered(query).ToListAsync(token);
+                return await OrderModels(filtered).ToListAsync(token);
             }, token);
         }
 
-        // ============================================================
+        // =====================================================================
         // WRITE OPERATIONS
-        // ============================================================
+        // =====================================================================
 
         public async Task InsertManufacturerModelAsync(ManufacturerModel model, CancellationToken token = default)
         {
-            Validate(model);
+            ValidateModel(model);
 
-            await SafeExecuteAsync(async () =>
+            await RunAsync(async () =>
             {
                 DB.ManufacturerModels.Add(model);
                 await SaveAsync(token);
@@ -121,78 +129,75 @@ namespace RacingHubCarRental
 
         public async Task UpdateManufacturerModelAsync(ManufacturerModel model, CancellationToken token = default)
         {
-            Validate(model);
+            ValidateModel(model);
 
-            await SafeExecuteAsync(async () =>
+            await RunAsync(async () =>
             {
                 DB.Entry(model).State = EntityState.Modified;
                 await SaveAsync(token);
             }, token);
         }
 
-        // ============================================================
-        // DELETE HELPERS
-        // ============================================================
+        // =====================================================================
+        // DELETE HELPERS (Granular for commit opportunities)
+        // =====================================================================
 
-        private async Task DeleteRelatedRentalsAsync(int modelId, CancellationToken token)
+        private async Task DeleteRentalsAsync(int modelId, CancellationToken token)
         {
             var rentals = await DB.Rentals
                 .Where(r => r.FleetCar.CarModel.ManufacturerModelID == modelId)
                 .ToListAsync(token);
 
-            if (rentals.Any())
-            {
-                DB.Rentals.RemoveRange(rentals);
-                await SaveAsync(token);
-            }
+            if (!rentals.Any()) return;
+
+            DB.Rentals.RemoveRange(rentals);
+            await SaveAsync(token);
         }
 
-        private async Task DeleteRelatedFleetCarsAsync(int modelId, CancellationToken token)
+        private async Task DeleteFleetCarsAsync(int modelId, CancellationToken token)
         {
-            var fleetCars = await DB.FleetCars
+            var fleet = await DB.FleetCars
                 .Where(f => f.CarModel.ManufacturerModelID == modelId)
                 .ToListAsync(token);
 
-            if (fleetCars.Any())
-            {
-                DB.FleetCars.RemoveRange(fleetCars);
-                await SaveAsync(token);
-            }
+            if (!fleet.Any()) return;
+
+            DB.FleetCars.RemoveRange(fleet);
+            await SaveAsync(token);
         }
 
-        private async Task DeleteRelatedCarModelsAsync(int modelId, CancellationToken token)
+        private async Task DeleteCarModelsAsync(int modelId, CancellationToken token)
         {
-            var relatedCars = await DB.CarModels
+            var cars = await DB.CarModels
                 .Where(c => c.ManufacturerModelID == modelId)
                 .ToListAsync(token);
 
-            if (relatedCars.Any())
-            {
-                DB.CarModels.RemoveRange(relatedCars);
-                await SaveAsync(token);
-            }
+            if (!cars.Any()) return;
+
+            DB.CarModels.RemoveRange(cars);
+            await SaveAsync(token);
         }
 
-        // ============================================================
-        // DELETE OPERATION
-        // ============================================================
+        // =====================================================================
+        // DELETE OPERATION (Collective + Granular)
+        // =====================================================================
 
         public async Task DeleteManufacturerModelAsync(
             ManufacturerModel model,
             bool collective = false,
             CancellationToken token = default)
         {
-            Validate(model);
+            ValidateModel(model);
 
-            await SafeExecuteAsync(async () =>
+            await RunAsync(async () =>
             {
-                var modelId = model.ManufacturerModelID;
+                int id = model.ManufacturerModelID;
 
                 if (collective)
                 {
-                    await DeleteRelatedRentalsAsync(modelId, token);
-                    await DeleteRelatedFleetCarsAsync(modelId, token);
-                    await DeleteRelatedCarModelsAsync(modelId, token);
+                    await DeleteRentalsAsync(id, token);
+                    await DeleteFleetCarsAsync(id, token);
+                    await DeleteCarModelsAsync(id, token);
                 }
 
                 DB.ManufacturerModels.Remove(model);
@@ -200,40 +205,39 @@ namespace RacingHubCarRental
             }, token);
         }
 
-        // ============================================================
+        // =====================================================================
         // EXISTENCE CHECK
-        // ============================================================
+        // =====================================================================
 
-        public async Task<bool> IsManufacturerModelExistsAsync(ManufacturerModel model, CancellationToken token = default)
+        public async Task<bool> IsManufacturerModelExistsAsync(
+            ManufacturerModel model,
+            CancellationToken token = default)
         {
-            Validate(model);
+            ValidateModel(model);
 
-            return await SafeExecuteAsync(async () =>
-            {
-                return await DB.ManufacturerModels.AnyAsync(m =>
+            return await RunAsync(async () =>
+                await DB.ManufacturerModels.AnyAsync(m =>
                     m.ManufacturerModelName == model.ManufacturerModelName &&
-                    m.ManufacturerID == model.ManufacturerID, token);
-            }, token);
+                    m.ManufacturerID == model.ManufacturerID, token),
+            token);
         }
 
-        // ============================================================
-        // LEGACY SYNC API (Optional backward compatibility)
-        // ============================================================
+        // =====================================================================
+        // LEGACY SYNC API (backward compatible)
+        // =====================================================================
 
         public List<Manufacturer> GetAllManufacturers()
-            => DB.Manufacturers.OrderBy(m => m.ManufacturerName).ToList();
+            => OrderManufacturers().ToList();
 
         public List<ManufacturerModel> GetAllManufacturerModels()
-            => Ordered(QueryBase()).ToList();
+            => OrderModels(BaseQuery()).ToList();
 
         public List<ManufacturerModel> GetModelsForManufacturer(int manufacturerId)
-            => Ordered(QueryBase()
-                .Where(mm => mm.Manufacturer.ManufacturerID == manufacturerId))
-                .ToList();
+            => OrderModels(BaseQuery().Where(m => m.Manufacturer.ManufacturerID == manufacturerId)).ToList();
 
         public bool IsManufacturerModelExists(ManufacturerModel model)
         {
-            Validate(model);
+            ValidateModel(model);
 
             return DB.ManufacturerModels.Any(m =>
                 m.ManufacturerModelName == model.ManufacturerModelName &&
@@ -242,33 +246,28 @@ namespace RacingHubCarRental
 
         public void InsertManufacturerModel(ManufacturerModel model)
         {
-            Validate(model);
+            ValidateModel(model);
             DB.ManufacturerModels.Add(model);
             Save();
         }
 
         public void UpdateManufacturerModel(ManufacturerModel model)
         {
-            Validate(model);
+            ValidateModel(model);
             DB.Entry(model).State = EntityState.Modified;
             Save();
         }
 
         public void DeleteManufacturerModel(ManufacturerModel model, bool collective = false)
         {
-            Validate(model);
-            var id = model.ManufacturerModelID;
+            ValidateModel(model);
+            int id = model.ManufacturerModelID;
 
             if (collective)
             {
-                var rentals = DB.Rentals.Where(r => r.FleetCar.CarModel.ManufacturerModelID == id);
-                DB.Rentals.RemoveRange(rentals);
-
-                var fleet = DB.FleetCars.Where(f => f.CarModel.ManufacturerModelID == id);
-                DB.FleetCars.RemoveRange(fleet);
-
-                var cars = DB.CarModels.Where(c => c.ManufacturerModelID == id);
-                DB.CarModels.RemoveRange(cars);
+                DB.Rentals.RemoveRange(DB.Rentals.Where(r => r.FleetCar.CarModel.ManufacturerModelID == id));
+                DB.FleetCars.RemoveRange(DB.FleetCars.Where(f => f.CarModel.ManufacturerModelID == id));
+                DB.CarModels.RemoveRange(DB.CarModels.Where(c => c.ManufacturerModelID == id));
             }
 
             DB.ManufacturerModels.Remove(model);
