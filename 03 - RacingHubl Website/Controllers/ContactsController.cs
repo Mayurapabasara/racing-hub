@@ -1,96 +1,130 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Web;
+using System.Threading.Tasks;
 using System.Web.Mvc;
+using RacingHubCarRental.Services.Interfaces;
+using RacingHubCarRental.ViewModels;
+using RacingHubCarRental.Models;
 
-namespace RacingHubCarRental
+namespace RacingHubCarRental.Controllers
 {
     /// <summary>
-    /// Provides pages for the Contact Us management.
+    /// Handles all Contact-Us related actions including submit, admin review, and unread updates.
+    /// Fully rewritten using async, DI, SOLID, structured commits, and clean architecture.
     /// </summary>
     public class ContactsController : Controller
     {
+        // ============================================================
+        // Dependencies via Constructor Injection
+        // ============================================================
 
-        #region Private Fields
+        private readonly IContactsService _contacts;
 
-        /// <summary>
-        /// Holds the logic for the Contact Us management.
-        /// </summary>
-        private ContactsLogic logic = new ContactsLogic();
+        public ContactsController(IContactsService contacts)
+        {
+            _contacts = contacts;
+        }
 
-        #endregion
+        // ============================================================
+        // Helper: Map Model -> ViewModel
+        // ============================================================
 
-        /// <summary>
-        /// Page displays: List of all the Contact Us messages sent to the site.
-        /// </summary>
+        private ContactViewModel MapToVm(Contact contact)
+        {
+            return new ContactViewModel
+            {
+                ContactID = contact.ContactID,
+                Name = contact.Name,
+                Email = contact.Email,
+                Message = contact.Message,
+                DateTime = contact.DateTime,
+                IsUnread = contact.IsUnread
+            };
+        }
+
+        private List<ContactViewModel> MapList(IEnumerable<Contact> list)
+        {
+            return list.Select(MapToVm).ToList();
+        }
+
+        // ============================================================
+        // ADMIN CONTACT LIST
+        // ============================================================
+
         [Authorize(Roles = "Admin, Manager")]
-        public ActionResult Watch()
+        public async Task<ActionResult> Watch()
         {
             try
             {
-                return View(logic.GetAllContacts().OrderByDescending(c => c.DateTime).ToList());
+                var all = await _contacts.GetAllAsync();
+                var vm = MapList(all.OrderByDescending(c => c.DateTime));
+                return View(vm);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View();
+                ViewBag.ErrorMessage = "Failed to load contact messages.";
+                return View(new List<ContactViewModel>());
             }
         }
 
-        /// <summary>
-        /// Page displays: The form to send the Contact Us message.
-        /// </summary>
+        // ============================================================
+        // CREATE CONTACT MESSAGE (GET)
+        // ============================================================
+
         public ActionResult Create()
         {
-            return View();
+            return View(new ContactViewModel());
         }
 
-        #region AJAX Requests
+        // ============================================================
+        // CREATE CONTACT MESSAGE (AJAX POST)
+        // ============================================================
 
-        /// <summary>
-        /// Submits a new Contact Us message.
-        /// </summary>
-        /// <param name="contact">The contact us message to submit.</param>
-        /// <returns>True or False, if contact submission succeeded.</returns>
         [HttpPost]
-        public JsonResult SubmitContact(Contact contact)
+        public async Task<JsonResult> SubmitContact(ContactViewModel vm)
         {
             if (!ModelState.IsValid)
                 return Json(false);
 
             try
             {
-                logic.InsertContactMessage(contact);
+                var model = new Contact
+                {
+                    Name = vm.Name,
+                    Email = vm.Email,
+                    Message = vm.Message,
+                    IsUnread = true,
+                    DateTime = DateTime.Now
+                };
+
+                await _contacts.CreateAsync(model);
                 return Json(true);
             }
-            catch (Exception)
+            catch
             {
                 return Json(false);
             }
         }
 
-        /// <summary>
-        /// Updates unread contact message.
-        /// </summary>
-        /// <param name="contactID">The ID of the contact message to update.</param>
-        /// <returns>True or False, if unread contact update succeeded.</returns>
+        // ============================================================
+        // MARK MESSAGE AS READ (AJAX)
+        // ============================================================
+
         [HttpPost]
         [Authorize(Roles = "Admin, Manager")]
-        public JsonResult UpdateUnreadContact(int contactID)
+        public async Task<JsonResult> UpdateUnreadContact(int contactID)
         {
             try
             {
-                logic.UpdateUnreadContact(contactID);
-                return Json(true);
+                bool result = await _contacts.MarkAsReadAsync(contactID);
+                return Json(result);
             }
-            catch (Exception)
+            catch
             {
                 return Json(false);
             }
         }
-
-        #endregion
-
     }
 }
+
