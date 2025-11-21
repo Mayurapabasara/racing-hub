@@ -1,230 +1,237 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Web;
+using System.Threading.Tasks;
 using System.Web.Mvc;
+using RacingHubCarRental.Services.Interfaces;
+using RacingHubCarRental.ViewModels;
+using RacingHubCarRental.Models;
 
-namespace RacingHubCarRental
+namespace RacingHubCarRental.Controllers
 {
     /// <summary>
-    /// Provides pages for orders management.
+    /// Controller responsible for Rental Order creation, listing, history, 
+    /// employee return operations and admin operations.
+    /// Fully rewritten for: async, DI, SOLID, readability & commit granularity.
     /// </summary>
     [Authorize]
     public class OrdersController : Controller
     {
+        // ============================================================
+        // Dependencies (DI)
+        // ============================================================
 
-        #region Private Fields
+        private readonly IOrdersService _orders;
+        private readonly IFleetCarsService _fleet;
 
-        /// <summary>
-        /// Holds the logic for the CRUD of the orders management.
-        /// </summary>
-        private OrdersLogic logic = new OrdersLogic();
+        public OrdersController(IOrdersService orders, IFleetCarsService fleet)
+        {
+            _orders = orders;
+            _fleet = fleet;
+        }
 
-        #endregion
+        // ============================================================
+        // Helper: Build ViewModel
+        // ============================================================
 
-        /// <summary>
-        /// Page displays: A form to create a new rental.
-        /// </summary>
-        public ActionResult Create(string licensePlate, DateTime startDate, DateTime returnDate)
+        private OrderViewModel BuildOrderVM(FleetCar car, DateTime start, DateTime end)
+        {
+            return new OrderViewModel
+            {
+                LicensePlate = car.LicensePlate,
+                CarImage = car.CarImage,
+                DailyPrice = car.CarModel.DailyPrice,
+                DayDelayPrice = car.CarModel.DayDelayPrice,
+                StartDate = start.Date,
+                ReturnDate = end.Date,
+                CarModelName = $"{car.CarModel.ManufacturerModel.Manufacturer.ManufacturerName} " +
+                               $"{car.CarModel.ManufacturerModel.ManufacturerModelName} " +
+                               $"{car.CarModel.ProductionYear} " +
+                               $"{(car.CarModel.ManualGear ? "Manual" : "Automatic")}"
+            };
+        }
+
+        // ============================================================
+        // CREATE (GET)
+        // ============================================================
+
+        public async Task<ActionResult> Create(string licensePlate, DateTime startDate, DateTime returnDate)
         {
             try
             {
-                // Gets the car object, according to the license plate:
-                FleetCarsLogic carsLogic = new FleetCarsLogic();
-                FleetCar car = carsLogic.GetFleetCarByLicensePlate(licensePlate);
-
-                // Checks if the car exists to order:
+                var car = await _fleet.GetByLicensePlateAsync(licensePlate);
                 if (car == null)
-                    return new HttpNotFoundResult("Car is not found."); // If car not exists, returns error 404 not found.
+                    return HttpNotFound("Car not found.");
 
-                // Car exists, so creates the order view model object:
-                OrderViewModel model = new OrderViewModel();
-                model.LicensePlate = licensePlate;
-                model.CarModelName = string.Format("{0} {1} {2} {3}", car.CarModel.ManufacturerModel.Manufacturer.ManufacturerName,
-                                                                      car.CarModel.ManufacturerModel.ManufacturerModelName,
-                                                                      car.CarModel.ProductionYear,
-                                                                      car.CarModel.ManualGear ? "Manual" : "Automatic");
-                model.CarImage = car.CarImage;
-                model.DailyPrice = car.CarModel.DailyPrice;
-                model.DayDelayPrice = car.CarModel.DayDelayPrice;
-                model.StartDate = startDate.Date;
-                model.ReturnDate = returnDate.Date;
-
-                return View(model);
+                var vm = BuildOrderVM(car, startDate, returnDate);
+                return View(vm);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Error loading order form.";
                 return View(new OrderViewModel());
             }
         }
 
-        /// <summary>
-        /// Page displays: A form to create a new rental. (POST)
-        /// </summary>
+        // ============================================================
+        // CREATE (POST)
+        // ============================================================
+
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Create(OrderViewModel model)
+        public async Task<ActionResult> Create(OrderViewModel vm)
         {
             if (!ModelState.IsValid)
-                return View(model);
+                return View(vm);
 
             try
             {
-                FleetCarsLogic carsLogic = new FleetCarsLogic(); // Holds the logic for the cars in the fleet.
+                bool available = await _fleet.IsAvailableAsync(
+                    vm.LicensePlate, vm.StartDate, vm.ReturnDate);
 
-                // Checks if the car is available in the specified rental dates:
-                if (carsLogic.CheckCarAvailability(model.LicensePlate, model.StartDate, model.ReturnDate))
+                if (!available)
                 {
-                    // Car is available, so:
-                    // Inserts the rental to the database, and assigns the order number (ID):
-                    int id = logic.InsertRental(model.LicensePlate, model.StartDate, model.ReturnDate, User.Identity.Name);
+                    ViewBag.ErrorMessage = "Car is unavailable for the selected dates.";
+                    return View(vm);
+                }
 
-                    // After rental inserted, redirects to Order Receipt action, with the order number:
-                    return RedirectToAction("OrderReceipt", new { id });
-                }
-                else
-                {
-                    // Car is not available:
-                    ViewBag.ErrorMessage = "Car is not available in the specified dates.";
-                    return View(model);
-                }
+                int orderId = await _orders.CreateRentalAsync(
+                    vm.LicensePlate, vm.StartDate, vm.ReturnDate, User.Identity.Name);
+
+                return RedirectToAction("OrderReceipt", new { id = orderId });
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(model);
+                ViewBag.ErrorMessage = "Could not complete the order.";
+                return View(vm);
             }
         }
 
-        /// <summary>
-        /// Page displays: A success message after ordering a car, with the order number,
-        ///                Also, suggests a redirect options like: orders history, cars list, homepage.
-        /// </summary>
+        // ============================================================
+        // RECEIPT
+        // ============================================================
+
         public ActionResult OrderReceipt(int id)
         {
             return View(id);
         }
 
-        /// <summary>
-        /// Page displays: A list of all the orders of the current user. (Rentals History).
-        /// </summary>
-        public ActionResult History()
+        // ============================================================
+        // USER HISTORY
+        // ============================================================
+
+        public async Task<ActionResult> History()
         {
             try
             {
-                return View(logic.GetRentalsForUser(User.Identity.Name));
+                var list = await _orders.GetHistoryAsync(User.Identity.Name);
+                return View(list);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Unable to load rental history.";
                 return View(new List<Rental>());
             }
         }
 
-        /// <summary>
-        /// Page displays: A list of all the orders from all the users in the website.
-        /// (Available only for Manager, and Admin).
-        /// </summary>
+        // ============================================================
+        // WATCH ALL (ADMIN only)
+        // ============================================================
+
         [Authorize(Roles = "Admin, Manager")]
-        public ActionResult Watch()
+        public async Task<ActionResult> Watch()
         {
             try
             {
-                return View(logic.GetAllRentals().OrderByDescending(r => r.RentalID));
+                var list = await _orders.GetAllAsync();
+                return View(list);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Unable to load rental list.";
                 return View(new List<Rental>());
             }
         }
 
-        /// <summary>
-        /// Page displays: A list of all the cars an employee can return.
-        /// (Available only for Employee, and Admin).
-        /// </summary>
+        // ============================================================
+        // CARS TO RETURN (GET)
+        // ============================================================
+
         [Authorize(Roles = "Admin, Employee")]
-        public ActionResult CarsToReturn()
+        public async Task<ActionResult> CarsToReturn()
         {
             try
             {
-                return View(logic.GetRentalsToCarReturn());
+                var list = await _orders.GetReturnableAsync();
+                return View(list);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Unable to load cars for return.";
                 return View(new List<Rental>());
             }
         }
 
-        /// <summary>
-        /// Page displays: A list of all the cars an employee can return. (POST) - (For search by receipt option).
-        /// (Available only for Employee, and Admin).
-        /// </summary>
-        [Authorize(Roles = "Admin, Employee")]
+        // ============================================================
+        // CARS TO RETURN (POST - Search)
+        // ============================================================
+
         [HttpPost]
-        public ActionResult CarsToReturn(int receiptNum = 0)
+        [Authorize(Roles = "Admin, Employee")]
+        public async Task<ActionResult> CarsToReturn(int receiptNum)
         {
             try
             {
-                List<Rental> model = new List<Rental>();
-                Rental rental = logic.GetRentalByID(receiptNum); // Gets the rental by the receipt (ID).
-
-                // Checks if a recipt is found:
-                if (rental != null)
-                    model.Add(rental);
-
-                return View(model);
+                var rental = await _orders.GetByIdAsync(receiptNum);
+                var list = rental != null ? new List<Rental> { rental } : new List<Rental>();
+                return View(list);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Search failed.";
                 return View(new List<Rental>());
             }
         }
 
-        /// <summary>
-        /// Page displays: A confirm message for returning a car, with all the details of the order,
-        ///                so the employee can confirm the return of the car.
-        /// (Available only for Employee, and Admin).
-        /// </summary>
+        // ============================================================
+        // CAR RETURN (GET)
+        // ============================================================
+
         [Authorize(Roles = "Admin, Employee")]
-        public ActionResult CarReturn(int id = 0)
+        public async Task<ActionResult> CarReturn(int id)
         {
             try
             {
-                return View(logic.GetRentalByID(id)); // Gets the details of the order.
+                var rental = await _orders.GetByIdAsync(id);
+                return rental == null ? HttpNotFound() : View(rental);
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Could not load return page.";
                 return View(new Rental());
             }
         }
 
-        /// <summary>
-        /// Page displays: A confirm message for returning a car, with all the details of the order,
-        ///                so the employee can confirm the return of the car. (POST)
-        /// (Available only for Employee, and Admin).
-        /// </summary>
-        [Authorize(Roles = "Admin, Employee")]
-        [HttpPost, ActionName("CarReturn")]
+        // ============================================================
+        // CAR RETURN (POST)
+        // ============================================================
+
+        [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult CarReturnConfirmed(int rentalID)
+        [ActionName("CarReturn")]
+        [Authorize(Roles = "Admin, Employee")]
+        public async Task<ActionResult> CarReturnConfirmed(int rentalID)
         {
             try
             {
-                logic.UpdateCarReturn(rentalID); // Updates that the car returned, and sets the actual return date to today.
-
-                return RedirectToAction("CarsToReturn"); // Redirects to the view of the list of all the cars to return.
+                await _orders.MarkReturnedAsync(rentalID);
+                return RedirectToAction("CarsToReturn");
             }
-            catch (Exception)
+            catch
             {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
+                ViewBag.ErrorMessage = "Could not return car.";
                 return View(new Rental());
             }
         }
-
     }
 }
+
