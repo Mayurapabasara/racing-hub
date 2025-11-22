@@ -1,75 +1,98 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data.Entity.Infrastructure;
-using System.Linq;
-using System.Web;
 using System.Web.Mvc;
 
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Provides pages for manufacturers management.
+    /// MVC Controller responsible for managing Manufacturer entities.
+    /// Refactored for clean architecture, commit-friendly granularity, and extensibility.
     /// </summary>
     [Authorize(Roles = "Admin")]
     public class ManufacturersController : Controller
     {
+        // ============================================================
+        // Dependencies
+        // ============================================================
 
-        #region Private Fields
+        private readonly ManufacturersLogic _logic;
 
-        /// <summary>
-        /// Holds the logic for the CRUD of the manufacturers.
-        /// </summary>
-        private ManufacturersLogic logic = new ManufacturersLogic();
+        public ManufacturersController()
+        {
+            _logic = new ManufacturersLogic();
+        }
 
-        #endregion
+        // ============================================================
+        // Helpers (Commit-Friendly Micro Methods)
+        // ============================================================
 
-        /// <summary>
-        /// Page displays: All the manufacturers in a list.
-        /// </summary>
+        private ActionResult SafeView<T>(Func<T> fn)
+        {
+            try
+            {
+                return View(fn());
+            }
+            catch (Exception)
+            {
+                ViewBag.ErrorMessage = "An error has occurred. Please try again later.";
+                return View(default(T));
+            }
+        }
+
+        private Manufacturer LoadManufacturerOr404(int id)
+        {
+            var manufacturer = _logic.GetManufacturerByID(id);
+            if (manufacturer == null)
+                throw new HttpException(404, "Manufacturer not found.");
+            return manufacturer;
+        }
+
+        private ActionResult SafeRedirect(Func<ActionResult> action)
+        {
+            try
+            {
+                return action();
+            }
+            catch (Exception)
+            {
+                ViewBag.ErrorMessage = "An unexpected error has occurred.";
+                return RedirectToAction("Index");
+            }
+        }
+
+        // ============================================================
+        // Index
+        // ============================================================
+
         public ActionResult Index()
         {
-            try
-            {
-                return View(logic.GetAllManufacturers());
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(new List<Manufacturer>());
-            }
+            return SafeView(() =>
+                _logic.GetAllManufacturers()
+            );
         }
 
-        /// <summary>
-        /// Page displays: The details of a manufacturer.
-        /// </summary>
+        // ============================================================
+        // Details
+        // ============================================================
+
         public ActionResult Details(int id = 0)
         {
-            try
-            {
-                Manufacturer manufacturer = logic.GetManufacturerByID(id);
-                if (manufacturer == null)
-                    return HttpNotFound();
-
-                return View(manufacturer);
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(new Manufacturer());
-            }
+            return SafeView(() =>
+                LoadManufacturerOr404(id)
+            );
         }
 
-        /// <summary>
-        /// Page displays: A form to add a new manufacturer.
-        /// </summary>
-        public ActionResult Create()
-        {
-            return View();
-        }
+        // ============================================================
+        // Create (GET)
+        // ============================================================
 
-        /// <summary>
-        /// Page displays: A form to add a new manufacturer. (POST)
-        /// </summary>
+        public ActionResult Create() => View();
+
+        // ============================================================
+        // Create (POST)
+        // ============================================================
+
         [HttpPost]
         [ValidateAntiForgeryToken]
         public ActionResult Create(Manufacturer manufacturer)
@@ -77,51 +100,34 @@ namespace RacingHubCarRental
             if (!ModelState.IsValid)
                 return View(manufacturer);
 
-            try
+            return SafeRedirect(() =>
             {
-                // Checks manufacturer already exists:
-                if (logic.IsManufacturerExists(manufacturer.ManufacturerName))
+                if (_logic.IsManufacturerExists(manufacturer.ManufacturerName))
                 {
                     ViewBag.ErrorMessage = "Manufacturer already exists.";
                     return View(manufacturer);
                 }
-                else
-                {
-                    // Manufacturer is OK to insert:
-                    logic.InsertManufacturer(manufacturer);
-                    return RedirectToAction("Index");
-                }
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(manufacturer);
-            }
+
+                _logic.InsertManufacturer(manufacturer);
+                return RedirectToAction("Index");
+            });
         }
 
-        /// <summary>
-        /// Page displays: A form to edit a manufacturer.
-        /// </summary>
+        // ============================================================
+        // Edit (GET)
+        // ============================================================
+
         public ActionResult Edit(int id = 0)
         {
-            try
-            {
-                Manufacturer manufacturer = logic.GetManufacturerByID(id);
-                if (manufacturer == null)
-                    return HttpNotFound();
-
-                return View(manufacturer);
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(new Manufacturer());
-            }
+            return SafeView(() =>
+                LoadManufacturerOr404(id)
+            );
         }
 
-        /// <summary>
-        /// Page displays: A form to edit a manufacturer. (POST)
-        /// </summary>
+        // ============================================================
+        // Edit (POST)
+        // ============================================================
+
         [HttpPost]
         [ValidateAntiForgeryToken]
         public ActionResult Edit(Manufacturer manufacturer)
@@ -129,85 +135,58 @@ namespace RacingHubCarRental
             if (!ModelState.IsValid)
                 return View(manufacturer);
 
-            try
+            return SafeRedirect(() =>
             {
-                logic.UpdateManufacturer(manufacturer);
+                _logic.UpdateManufacturer(manufacturer);
                 return RedirectToAction("Index");
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(manufacturer);
-            }
+            });
         }
 
-        /// <summary>
-        /// Page displays: A manufacturer to delete.
-        /// </summary>
+        // ============================================================
+        // Delete (GET)
+        // ============================================================
+
         public ActionResult Delete(int id = 0)
         {
-            try
-            {
-                Manufacturer manufacturer = logic.GetManufacturerByID(id);
-                if (manufacturer == null)
-                    return HttpNotFound();
-
-                return View(manufacturer);
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(new Manufacturer());
-            }
+            return SafeView(() =>
+                LoadManufacturerOr404(id)
+            );
         }
 
-        /// <summary>
-        /// Page displays: A manufacturer to delete. (POST)
-        /// </summary>
+        // ============================================================
+        // Delete (POST)
+        // ============================================================
+
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
         public ActionResult DeleteConfirmed(int id)
         {
-            try
+            return SafeRedirect(() =>
             {
-                logic.DeleteManufacturer(logic.GetManufacturerByID(id));
-                return RedirectToAction("Index");
-            }
-            catch (DbUpdateException)
-            {
-                // If can't delete, because it has a relationship with other records, redirects to "DeleteFailed" action:
-                return RedirectToAction("DeleteFailed", new { id });
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(logic.GetManufacturerByID(id));
-            }
+                try
+                {
+                    var manufacturer = LoadManufacturerOr404(id);
+                    _logic.DeleteManufacturer(manufacturer);
+                    return RedirectToAction("Index");
+                }
+                catch (DbUpdateException)
+                {
+                    return RedirectToAction("DeleteFailed", new { id });
+                }
+            });
         }
 
-        /// <summary>
-        /// Page displays: Proceed option, after delete has failed.
-        /// </summary>
+        // ============================================================
+        // Delete Failed
+        // ============================================================
+
         public ActionResult DeleteFailed(int id = 0)
         {
-            try
-            {
-                Manufacturer manufacturer = logic.GetManufacturerByID(id);
-                if (manufacturer == null)
-                    return HttpNotFound();
-
-                return View(manufacturer);
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(new Manufacturer());
-            }
+            return SafeView(() =>
+                LoadManufacturerOr404(id)
+            );
         }
 
-        /// <summary>
-        /// Page displays: Proceed option, after delete has failed. (POST)
-        /// </summary>
         [HttpPost, ActionName("DeleteFailed")]
         [ValidateAntiForgeryToken]
         public ActionResult DeleteFailedProceed(int id)
@@ -215,44 +194,32 @@ namespace RacingHubCarRental
             return RedirectToAction("DeleteCollective", new { id });
         }
 
-        /// <summary>
-        /// Page displays: A manufacturer to delete collective.
-        /// </summary>
+        // ============================================================
+        // Delete Collective (GET)
+        // ============================================================
+
         public ActionResult DeleteCollective(int id = 0)
         {
-            try
-            {
-                Manufacturer manufacturer = logic.GetManufacturerByID(id);
-                if (manufacturer == null)
-                    return HttpNotFound();
-
-                return View(manufacturer);
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(logic.GetManufacturerByID(id));
-            }
+            return SafeView(() =>
+                LoadManufacturerOr404(id)
+            );
         }
 
-        /// <summary>
-        /// Page displays: A manufacturer to delete collective. (POST)
-        /// </summary>
+        // ============================================================
+        // Delete Collective (POST)
+        // ============================================================
+
         [HttpPost, ActionName("DeleteCollective")]
         [ValidateAntiForgeryToken]
         public ActionResult DeleteCollectiveConfirmed(int id)
         {
-            try
+            return SafeRedirect(() =>
             {
-                logic.DeleteManufacturer(logic.GetManufacturerByID(id), true);
+                var manufacturer = LoadManufacturerOr404(id);
+                _logic.DeleteManufacturer(manufacturer, true);
                 return RedirectToAction("Index");
-            }
-            catch (Exception)
-            {
-                ViewBag.ErrorMessage = "An error has occurred. please try again later.";
-                return View(logic.GetManufacturerByID(id));
-            }
+            });
         }
-
     }
 }
+
