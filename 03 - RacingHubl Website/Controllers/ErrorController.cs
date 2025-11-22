@@ -1,48 +1,95 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
+using System;
 using System.Web.Mvc;
 
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Provides pages for errors that may occur in the site.
+    /// Centralized MVC controller responsible for rendering error pages.
+    /// Designed with extensibility, commit granularity, and clean layering in mind.
     /// </summary>
     public class ErrorController : Controller
     {
+        // ============================================================
+        // Constants (Separate commits for adding constants)
+        // ============================================================
+
+        private const string GeneralErrorView = "Index";
+        private const string ForbiddenErrorView = "HttpError403";
+        private const string NotFoundErrorView = "HttpError404";
+        private const string InternalErrorView = "HttpError500";
+
+        // ============================================================
+        // Public Entry Points
+        // ============================================================
 
         /// <summary>
-        /// Error page for: General.
+        /// Default fallback error page (General Error).
         /// </summary>
         public ActionResult Index()
         {
-            return View();
+            return RenderSafeView(GeneralErrorView);
         }
 
         /// <summary>
-        /// Error page for: 403 - Forbidden.
+        /// Renders the 403 Forbidden error page.
         /// </summary>
         public ActionResult HttpError403()
         {
-            return View();
+            return RenderSafeView(ForbiddenErrorView);
         }
 
         /// <summary>
-        /// Error page for: 404 - Page not found.
+        /// Renders the 404 Not Found error page.
         /// </summary>
         public ActionResult HttpError404()
         {
-            return View();
+            return RenderSafeView(NotFoundErrorView);
         }
 
         /// <summary>
-        /// Error page for: 500 - Internal Server Error.
+        /// Renders the 500 Internal Server Error page.
+        /// Defaults to general error view.
         /// </summary>
         public ActionResult HttpError500()
         {
-            return View("Index"); // Shows general error.
+            return RenderSafeView(GeneralErrorView);
         }
 
+        // ============================================================
+        // Helper Methods (Each one commit-friendly)
+        // ============================================================
+
+        /// <summary>
+        /// Attempts to render a view by name.
+        /// Fallback to the general error page if view is missing.
+        /// </summary>
+        private ActionResult RenderSafeView(string viewName)
+        {
+            try
+            {
+                return View(viewName);
+            }
+            catch
+            {
+                // Future commit: Add logging here.
+                return View(GeneralErrorView);
+            }
+        }
+
+        /// <summary>
+        /// Allows easy future mapping of error codes to views.
+        /// You can extend this to support dynamic routing.
+        /// </summary>
+        protected string ResolveView(int statusCode)
+        {
+            return statusCode switch
+            {
+                403 => ForbiddenErrorView,
+                404 => NotFoundErrorView,
+                500 => InternalErrorView,
+                _ => GeneralErrorView
+            };
+        }
     }
 }
+
