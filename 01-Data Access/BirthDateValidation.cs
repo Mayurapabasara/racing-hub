@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel.DataAnnotations;
 using System.Web.Mvc;
 using System.Collections.Generic;
@@ -6,26 +6,14 @@ using System.Collections.Generic;
 namespace RacingHubCarRental.Validations
 {
     /// <summary>
-    /// Validates if the date of birth is valid, by finding the age from the date, 
-    /// and checking if the age is valid in a specific range of age!
+    /// Validates if a given birth date matches an allowed age range.
     /// </summary>
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = true, Inherited = false)]
     public sealed class BirthDateValidationAttribute : ValidationAttribute, IClientValidatable
     {
-        /// <summary>
-        /// Holds the minimum valid age!
-        /// </summary>
-        public int MinAge { get; private set; }
-        /// <summary>
-        /// Holds the maximum valid age!
-        /// </summary>
-        public int MaxAge { get; private set; }
+        public int MinAge { get; }
+        public int MaxAge { get; }
 
-        /// <summary>
-        /// C'tor
-        /// </summary>
-        /// <param name="minAge">The minimum valid age.</param>
-        /// <param name="maxAge">The maximum valid age.</param>
         public BirthDateValidationAttribute(int minAge, int maxAge)
             : base("{0} is invalid.")
         {
@@ -35,41 +23,32 @@ namespace RacingHubCarRental.Validations
 
         protected override ValidationResult IsValid(object value, ValidationContext validationContext)
         {
-            if (value != null)
+            // If no value provided, no validation needed (use [Required] separately if needed)
+            if (value == null)
+                return ValidationResult.Success;
+
+            if (value is not DateTime birthDate)
+                throw new Exception("BirthDateValidation: value must be a DateTime.");
+
+            DateTime today = DateTime.Today;
+            int age = today.Year - birthDate.Year;
+
+            // Adjust age if the birthday hasn't occurred yet this year
+            if (birthDate.Date > today.AddYears(-age)) 
+                age--;
+
+            if (age < MinAge || age > MaxAge)
             {
-                if (!(value is DateTime))
-                    throw new Exception("The value is not DateTime for the BirthDateValidation.");
-
-                DateTime birthDate = Convert.ToDateTime(value); // Gets the BirthDate of the user
-                DateTime today = DateTime.Today; // Gets today's date
-                int age = today.Year - birthDate.Year; // Calculates age
-
-                // Checks if age is lower than minimum, or higher than maximum:
-                if (age < MinAge || age > MaxAge)
-                {
-                    // If so, the BirthDate is invalid!
-                    var errorMessage = FormatErrorMessage(validationContext.DisplayName);
-                    return new ValidationResult(errorMessage);
-                }
+                string msg = FormatErrorMessage(validationContext.DisplayName);
+                return new ValidationResult(msg);
             }
 
             return ValidationResult.Success;
         }
 
-        // For the client side validation:
         public IEnumerable<ModelClientValidationRule> GetClientValidationRules(ModelMetadata metadata, ControllerContext context)
         {
             var rule = new ModelClientValidationRule
             {
-                ValidationType = "birthdate", // This is the name jQuery adapter will use!
-                ErrorMessage = ErrorMessage // This is the error message the client shows!
-            };
+                ValidationT
 
-            // The parameters the client side validation uses:
-            rule.ValidationParameters["minage"] = MinAge;
-            rule.ValidationParameters["maxage"] = MaxAge;
-
-            yield return rule;
-        }
-    }
-}
