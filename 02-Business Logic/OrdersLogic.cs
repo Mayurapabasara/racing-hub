@@ -49,10 +49,11 @@ namespace RacingHubCarRental
             return q.OrderByDescending(r => r.RentalID);
         }
 
-        private IQueryable<Rental> NewHistory(IQueryable<Rental> q)
-        {
-            return q.OrderByDescending(r => r.RentalData);
-        }
+
+
+
+
+       
 
         private IQueryable<Rental> PendingReturns(IQueryable<Rental> q)
         {
@@ -231,6 +232,7 @@ namespace RacingHubCarRental
         }
     }
 }
+
 
 
 
