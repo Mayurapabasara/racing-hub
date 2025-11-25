@@ -1,32 +1,37 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Web;
 
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Represents a view model for the user login.
+    /// ViewModel used for user authentication during login.
     /// </summary>
     public class LoginViewModel
     {
-
+        /// <summary>
+        /// The username of the user attempting to log in.
+        /// </summary>
+        [Required(ErrorMessage = "Please enter your username.")]
+        [StringLength(50, ErrorMessage = "Username cannot exceed 50 characters.")]
+        [MinLength(4, ErrorMessage = "Username must contain at least 4 characters.")]
         [Display(Name = "Username")]
-        [StringLength(50, ErrorMessage = "Maximum length is 50 characters.")]
-        [Required(ErrorMessage = "Username is required.")]
-        [RegularExpression(@"^.{4,}$", ErrorMessage = "Minimum length is 4 characters.")]
         public string Username { get; set; }
 
-        [Display(Name = "Password")]
-        [StringLength(50, ErrorMessage = "The field has maximum length of 50.")]
-        [Required(ErrorMessage = "Password is required.")]
-        [RegularExpression(@"^.{4,}$", ErrorMessage = "Minimum length is 4 characters.")]
+        /// <summary>
+        /// The password entered by the user.
+        /// </summary>
+        [Required(ErrorMessage = "Please enter your password.")]
+        [StringLength(50, ErrorMessage = "Password cannot exceed 50 characters.")]
+        [MinLength(4, ErrorMessage = "Password must contain at least 4 characters.")]
         [DataType(DataType.Password)]
+        [Display(Name = "Password")]
         public string Password { get; set; }
 
-        [Display(Name = "Keep me logged in")]
+        /// <summary>
+        /// Indicates whether the system should keep the user logged in.
+        /// </summary>
+        [Display(Name = "Remember Me")]
         public bool RememberMe { get; set; }
-
     }
 }
+
