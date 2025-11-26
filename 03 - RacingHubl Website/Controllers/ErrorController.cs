@@ -4,90 +4,90 @@ using System.Web.Mvc;
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Centralized MVC controller responsible for rendering error pages.
-    /// Designed with extensibility, commit granularity, and clean layering in mind.
+    /// Central controller for all application-level error pages.
+    /// Structured for extensibility, clean commits, and future expansion.
     /// </summary>
     public class ErrorController : Controller
     {
         // ============================================================
-        // Constants (Separate commits for adding constants)
+        // View Name Constants (Easy to track in version control)
         // ============================================================
 
-        private const string GeneralErrorView = "Index";
-        private const string ForbiddenErrorView = "HttpError403";
-        private const string NotFoundErrorView = "HttpError404";
-        private const string InternalErrorView = "HttpError500";
+        private const string ViewGeneralError = "Index";
+        private const string ViewForbidden = "HttpError403";
+        private const string ViewNotFound = "HttpError404";
+        private const string ViewInternal = "HttpError500";
 
         // ============================================================
-        // Public Entry Points
+        // Public Endpoints
         // ============================================================
 
         /// <summary>
-        /// Default fallback error page (General Error).
+        /// Default fallback page for general errors.
         /// </summary>
         public ActionResult Index()
         {
-            return RenderSafeView(GeneralErrorView);
+            return RenderErrorPage(ViewGeneralError);
         }
 
         /// <summary>
-        /// Renders the 403 Forbidden error page.
+        /// Page rendered for HTTP 403 Forbidden errors.
         /// </summary>
-        public ActionResult HttpError403()
+        public ActionResult Forbidden()
         {
-            return RenderSafeView(ForbiddenErrorView);
+            return RenderErrorPage(ViewForbidden);
         }
 
         /// <summary>
-        /// Renders the 404 Not Found error page.
+        /// Page rendered for HTTP 404 Not Found errors.
         /// </summary>
-        public ActionResult HttpError404()
+        public ActionResult NotFoundPage()
         {
-            return RenderSafeView(NotFoundErrorView);
+            return RenderErrorPage(ViewNotFound);
         }
 
         /// <summary>
-        /// Renders the 500 Internal Server Error page.
-        /// Defaults to general error view.
+        /// Page rendered for HTTP 500 Internal Server Error.
+        /// Falls back to general error page if needed.
         /// </summary>
-        public ActionResult HttpError500()
+        public ActionResult InternalError()
         {
-            return RenderSafeView(GeneralErrorView);
+            return RenderErrorPage(ViewInternal);
         }
 
         // ============================================================
-        // Helper Methods (Each one commit-friendly)
+        // Helper Methods (Small, testable, commit-friendly units)
         // ============================================================
 
         /// <summary>
-        /// Attempts to render a view by name.
-        /// Fallback to the general error page if view is missing.
+        /// Safely renders an error view.  
+        /// If the view does not exist, falls back to the general error view.
         /// </summary>
-        private ActionResult RenderSafeView(string viewName)
+        private ActionResult RenderErrorPage(string viewName)
         {
             try
             {
                 return View(viewName);
             }
-            catch
+            catch (Exception)
             {
-                // Future commit: Add logging here.
-                return View(GeneralErrorView);
+                // IDEA for future commit: replace with ILogger
+                return View(ViewGeneralError);
             }
         }
 
         /// <summary>
-        /// Allows easy future mapping of error codes to views.
-        /// You can extend this to support dynamic routing.
+        /// Maps HTTP status codes to view names.
+        /// Extend this easily without modifying render logic.
         /// </summary>
-        protected string ResolveView(int statusCode)
+        protected string MapErrorView(int statusCode)
         {
             return statusCode switch
             {
-                403 => ForbiddenErrorView,
-                404 => NotFoundErrorView,
-                500 => InternalErrorView,
-                _ => GeneralErrorView
+                403 => ViewForbidden,
+                404 => ViewNotFound,
+                500 => ViewInternal,
+                _ => ViewGeneralError
             };
         }
     }
