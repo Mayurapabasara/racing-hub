@@ -144,17 +144,9 @@ namespace RacingHubCarRental
         // IDisposable Implementation
         // ============================================================
 
-        protected virtual void Dispose(bool disposing)
+        public void RefreshData()
         {
-            if (!_disposed)
-            {
-                if (disposing)
-                {
-                    _db?.Dispose();
-                }
-
-                _disposed = true;
-            }
+            Notify(DataChangeType.DataRefreshed);
         }
 
         /// <summary>
