@@ -33,17 +33,7 @@ namespace RacingHubCarRental
         // QUERY PIPELINE
         // =====================================================================
 
-        private IQueryable<ManufacturerModel> BaseQuery()
-        {
-            return DB.ManufacturerModels.Include(m => m.Manufacturer);
-        }
-
-        private IQueryable<ManufacturerModel> OrderModels(IQueryable<ManufacturerModel> query)
-        {
-            return query
-                .OrderBy(m => m.Manufacturer.ManufacturerName)
-                .ThenBy(m => m.ManufacturerModelName);
-        }
+        
 
         private IQueryable<Manufacturer> OrderManufacturers()
         {
