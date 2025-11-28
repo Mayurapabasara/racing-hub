@@ -27,6 +27,6 @@ namespace RacingHubCarRental
         public decimal DayDelayPrice { get; set; }
     
         public virtual ManufacturerModel ManufacturerModel { get; set; }
-        public virtual ICollection<FleetCar> FleetCars { get; set; }
+        
     }
 }
