@@ -1,32 +1,96 @@
 using System.Collections.Generic;
-using RacingHubCarRental; // Ensure 'Role' and other models are available
+using System.Threading.Tasks;
+using RacingHubCarRental.Models; // Updated path for Role/User models
 
 namespace RacingHubCarRental.Interfaces
 {
     /// <summary>
-    /// Defines the contract for all role and user-role management operations.
-    /// This separation ensures flexibility and future maintenance stability.
+    /// Contract defining all operations required for managing roles and user-role assignments.
+    /// Refactored for async support, better naming, SOLID compliance, and testability.
     /// </summary>
     public interface IRolesLogic
     {
-        // Role Management (Write Operations)
-        void CreateRole(string roleName);
-        void UpdateRole(int roleID, string newRoleName);
-        bool DeleteRole(string roleName, bool throwOnPopulatedRole);
+        // ============================================================
+        // ROLE MANAGEMENT (CRUD)
+        // ============================================================
 
-        // User-Role Assignment (Write Operations)
-        void AddUserToRole(string username, string roleName);
-        void AddUsersToRoles(string[] usernames, string[] roleNames);
-        void RemoveUsersFromRoles(string[] usernames, string[] roleNames);
-        void UpdateRoleToUser(string username, string roleName);
+        /// <summary>
+        /// Creates a new application role.
+        /// </summary>
+        Task CreateRoleAsync(string roleName);
 
-        // Retrieval/Query Operations (Delegated to service, but included in contract)
-        string[] GetAllRoleNames();
-        string[] GetRolesForUser(string username);
-        string[] GetUsersInRole(string roleName);
-        string[] FindUsersInRole(string roleName, string usernameToMatch);
-        bool IsUserInRole(string username, string roleName);
-        bool RoleExists(string roleName);
-        List<Role> GetAllRoles();
+        /// <summary>
+        /// Updates the name of an existing role.
+        /// </summary>
+        Task UpdateRoleAsync(int roleId, string newRoleName);
+
+        /// <summary>
+        /// Deletes a role. 
+        /// </summary>
+        Task<bool> DeleteRoleAsync(string roleName, bool blockIfUsersAssigned);
+
+        // ============================================================
+        // USER → ROLE ASSIGNMENT
+        // ============================================================
+
+        /// <summary>
+        /// Assigns a user to a specific role.
+        /// </summary>
+        Task AddUserToRoleAsync(string username, string roleName);
+
+        /// <summary>
+        /// Assigns multiple users to multiple roles.
+        /// </summary>
+        Task AddUsersToRolesAsync(IEnumerable<string> usernames, IEnumerable<string> roleNames);
+
+        /// <summary>
+        /// Removes users from roles.
+        /// </summary>
+        Task RemoveUsersFromRolesAsync(IEnumerable<string> usernames, IEnumerable<string> roleNames);
+
+        /// <summary>
+        /// Updates (replaces) the role of a specific user.
+        /// </summary>
+        Task UpdateUserRoleAsync(string username, string newRoleName);
+
+        // ============================================================
+        // READ / QUERY OPERATIONS
+        // ============================================================
+
+        /// <summary>
+        /// Gets the list of all defined role names.
+        /// </summary>
+        Task<IEnumerable<string>> GetAllRoleNamesAsync();
+
+        /// <summary>
+        /// Gets all roles assigned to a user.
+        /// </summary>
+        Task<IEnumerable<string>> GetRolesForUserAsync(string username);
+
+        /// <summary>
+        /// Gets the usernames of all users within a role.
+        /// </summary>
+        Task<IEnumerable<string>> GetUsersInRoleAsync(string roleName);
+
+        /// <summary>
+        /// Searches inside a role by username pattern.
+        /// </summary>
+        Task<IEnumerable<string>> FindUsersInRoleAsync(string roleName, string usernamePattern);
+
+        /// <summary>
+        /// Checks if user belongs to a role.
+        /// </summary>
+        Task<bool> IsUserInRoleAsync(string username, string roleName);
+
+        /// <summary>
+        /// Checks if a role exists.
+        /// </summary>
+        Task<bool> RoleExistsAsync(string roleName);
+
+        /// <summary>
+        /// Returns the complete list of role entities.
+        /// </summary>
+        Task<IEnumerable<Role>> GetAllRolesAsync();
     }
 }
+
