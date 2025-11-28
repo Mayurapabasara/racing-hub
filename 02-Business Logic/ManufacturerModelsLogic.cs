@@ -199,18 +199,7 @@ namespace RacingHubCarRental
         // EXISTENCE CHECK
         // =====================================================================
 
-        public async Task<bool> IsManufacturerModelExistsAsync(
-            ManufacturerModel model,
-            CancellationToken token = default)
-        {
-            ValidateModel(model);
-
-            return await RunAsync(async () =>
-                await DB.ManufacturerModels.AnyAsync(m =>
-                    m.ManufacturerModelName == model.ManufacturerModelName &&
-                    m.ManufacturerID == model.ManufacturerID, token),
-            token);
-        }
+        
 
         // =====================================================================
         // LEGACY SYNC API (backward compatible)
