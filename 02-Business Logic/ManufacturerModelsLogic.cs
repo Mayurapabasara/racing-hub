@@ -208,7 +208,7 @@ namespace RacingHubCarRental
         public List<Manufacturer> GetAllManufacturers()
             => OrderManufacturers().ToList();
             
-         public List<Manufacturer> GetAllNewfacturersByUser()
+         public List<Manufacturer> GetAllNewfacturers()
             => OrderManufacturers().ToList();
 
         public List<ManufacturerModel> GetAllManufacturerModels()
