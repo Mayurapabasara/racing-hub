@@ -13,6 +13,9 @@ namespace RacingHubCarRental
 
     public partial class CarModel
     {
+        /// <summary>
+        /// Creates a new instance of <see cref="CarModel"/> with initialized collections.
+        /// </summary>
         public CarModel()
         {
             FleetCars = new HashSet<FleetCar>();
@@ -21,8 +24,24 @@ namespace RacingHubCarRental
         public int CarModelID { get; set; }
         public int ManufacturerModelID { get; set; }
         public int ProductionYear { get; set; }
-        public bool ManualGear { get; set; }
+
+        /// <summary>
+        /// Indicates whether this model uses manual transmission.
+        /// </summary>
+        public bool IsManualGear { get; set; }
+
+        // ---------------------------------------------------------------------
+        // Pricing & Billing
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Standard daily rental price for this model.
+        /// </summary>
         public decimal DailyPrice { get; set; }
+
+        /// <summary>
+        /// Penalty price applied per delayed day during late returns.
+        /// </summary>
         public decimal DayDelayPrice { get; set; }
 
         public virtual ManufacturerModel ManufacturerModel { get; set; }
