@@ -1,0 +1,47 @@
+/*!
+ * Racing Hub - jQuery UI CSS Framework
+ * Version: 1.8.24
+ * Copyright 2012, AUTHORS.txt
+ * Licensed under the MIT license: http://jquery.org/license
+ * Updated for modern project structure
+ */
+
+/*--------------------------------------
+  Core & Base Styles
+---------------------------------------*/
+@import url("jquery.ui.core.css");
+
+/*--------------------------------------
+  jQuery UI Components
+---------------------------------------*/
+
+/* Accordion */
+@import url("jquery.ui.accordion.css");
+
+/* Autocomplete */
+@import url("jquery.ui.autocomplete.css");
+
+/* Button */
+@import url("jquery.ui.button.css");
+
+/* Datepicker */
+@import url("jquery.ui.datepicker.css");
+
+/* Dialog */
+@import url("jquery.ui.dialog.css");
+
+/* Progress Bar */
+@import url("jquery.ui.progressbar.css");
+
+/* Resizable */
+@import url("jquery.ui.resizable.css");
+
+/* Selectable */
+@import url("jquery.ui.selectable.css");
+
+/* Slider */
+@import url("jquery.ui.slider.css");
+
+/* Tabs */
+@import url("jquery.ui.tabs.css");
+
