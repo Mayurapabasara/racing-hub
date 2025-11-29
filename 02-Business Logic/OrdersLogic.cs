@@ -49,6 +49,12 @@ namespace RacingHubCarRental
             return q.OrderByDescending(r => r.RentalID);
         }
 
+
+
+
+
+       
+
         private IQueryable<Rental> PendingReturns(IQueryable<Rental> q)
         {
             return q.Where(r => r.ActualReturnDate == null)
@@ -226,4 +232,7 @@ namespace RacingHubCarRental
         }
     }
 }
+
+
+
 
