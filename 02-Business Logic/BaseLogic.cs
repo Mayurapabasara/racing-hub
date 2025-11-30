@@ -1,5 +1,4 @@
 using System;
-using System.Data.Entity;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,86 +6,63 @@ using System.Threading.Tasks;
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// Base class for all logic/service classes.
-    /// Provides:
-    /// - Lazy-loaded EF DbContext
-    /// - Async helper wrappers
-    /// - Centralized logging
-    /// - Safe disposal pattern
-    /// - Future extensibility hooks
+    /// Base abstraction for all logic/service classes.
+    /// Modernized to match a clean service-oriented architecture:
+    /// - Centralized exception handling
+    /// - Async-first execution model
+    /// - Pluggable data providers (future microservice compatibility)
+    /// - Unified logging hooks
+    /// - Lightweight and test-friendly design
     /// </summary>
     public abstract class BaseLogic : IDisposable
     {
         // ============================================================
-        // Private Fields
+        // Private State
         // ============================================================
         private bool _disposed;
-        private RacingHubCarRentalEntities? _db;
-
-        // ============================================================
-        // Protected Properties
-        // ============================================================
 
         /// <summary>
-        /// Lazy-created database context instance.
-        /// Derived classes should always use DB instead of creating their own.
+        /// Event fired when any service triggers a data change.
+        /// Helps keep UI/admin dashboards in sync.
         /// </summary>
-        protected RacingHubCarRentalEntities DB
-        {
-            get
-            {
-                if (_db == null)
-                {
-                    _db = new RacingHubCarRentalEntities();
-                    ConfigureContext(_db);
-                }
-
-                return _db;
-            }
-        }
+        public event Action<DataChangeType>? OnStateChanged;
 
         // ============================================================
-        // Constructor
+        // Constructors
         // ============================================================
+
         protected BaseLogic()
         {
-            // Reserved for dependency injection extensions (future)
+            // Reserved for future dependency injection
+            Log("BaseLogic initialized.");
         }
 
         // ============================================================
-        // Virtual Hooks (Extensible by child classes)
+        // Logging Utilities
         // ============================================================
 
         /// <summary>
-        /// Allows child classes to override and configure the DbContext.
-        /// Example: DB.Configuration.LazyLoadingEnabled = false;
-        /// </summary>
-        protected virtual void ConfigureContext(RacingHubCarRentalEntities context)
-        {
-            // Default configuration
-            context.Configuration.LazyLoadingEnabled = true;
-            context.Configuration.ProxyCreationEnabled = true;
-        }
-
-        /// <summary>
-        /// Optional hook for logging database operations.
-        /// Child classes can override this.
+        /// Writes a log entry using Debug trace.
+        /// Derived services may override to implement:
+        /// - File logging
+        /// - External telemetry
+        /// - ELK / CloudWatch pipelines
         /// </summary>
         protected virtual void Log(string message)
         {
-            Debug.WriteLine($"[BaseLogic] {message}");
+            Debug.WriteLine($"[{GetType().Name}] {message}");
         }
 
         // ============================================================
-        // Async Helper Methods (boosts code reuse)
+        // Unified Async Execution Wrappers
         // ============================================================
 
         /// <summary>
-        /// Runs a database operation safely using async/await.
-        /// Centralizes error handling and optional logging.
+        /// Safely executes async operations with automatic logging.
+        /// Recommended for all database or external API calls.
         /// </summary>
-        protected async Task<T> SafeExecuteAsync<T>(
-            Func<Task<T>> action, 
+        protected async Task<T> ExecuteAsync<T>(
+            Func<Task<T>> action,
             CancellationToken token = default)
         {
             try
@@ -96,15 +72,15 @@ namespace RacingHubCarRental
             catch (Exception ex)
             {
                 Log($"Error: {ex.Message}");
-                throw; // Rethrow to allow controller-level handling
+                throw; // Allow controller or API layer to handle
             }
         }
 
         /// <summary>
-        /// Async version without return value.
+        /// Safe wrapper for void async operations.
         /// </summary>
-        protected async Task SafeExecuteAsync(
-            Func<Task> action, 
+        protected async Task ExecuteAsync(
+            Func<Task> action,
             CancellationToken token = default)
         {
             try
@@ -119,45 +95,42 @@ namespace RacingHubCarRental
         }
 
         // ============================================================
-        // Save Changes Helpers
+        // Shared Event Trigger Methods
         // ============================================================
 
         /// <summary>
-        /// Saves changes asynchronously with cancellation token support.
+        /// Notify subscribers that a data mutation occurred.
+        /// Useful for dashboards & future notification microservice hooks.
         /// </summary>
-        protected async Task<int> SaveAsync(CancellationToken token = default)
+        protected void Notify(DataChangeType type)
         {
-            Log("Saving changes to database.");
-            return await DB.SaveChangesAsync(token);
+            Log($"State changed: {type}");
+            OnStateChanged?.Invoke(type);
         }
-        
-        protected async Task<int> SaveDataAsync(CancellationToken token = default)
-        {
-            Log("Saving changes to database.");
-            return await DB.SaveChangesAsync(token);
-        }
-
-        /// <summary>
-        /// Synchronous SaveChanges wrapper.
-        /// </summary>
-        protected int Save()
-        {
-            Log("Saving changes (sync).");
-            return DB.SaveChanges();
-        }
-
-        // ============================================================
-        // IDisposable Implementation
-        // ============================================================
 
         public void RefreshData()
         {
             Notify(DataChangeType.DataRefreshed);
         }
 
-        /// <summary>
-        /// Disposes the underlying DbContext and resources.
-        </summary>
+        // ============================================================
+        // Cleanup & Resource Management
+        // ============================================================
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+
+            if (disposing)
+            {
+                // In updated architecture, no EF DbContext here.
+                // Reserved for future disposable dependencies.
+                Log("Service resources cleaned.");
+            }
+
+            _disposed = true;
+        }
+
         public void Dispose()
         {
             Dispose(true);
@@ -168,6 +141,21 @@ namespace RacingHubCarRental
         {
             Dispose(false);
         }
+    }
+
+    /// <summary>
+    /// Enum representing different system-wide change events.
+    /// Extended for richer admin dashboard integrations.
+    /// </summary>
+    public enum DataChangeType
+    {
+        None,
+        ItemCreated,
+        ItemUpdated,
+        ItemDeleted,
+        UserChanged,
+        DataRefreshed,
+        AllDataCleared
     }
 }
 
