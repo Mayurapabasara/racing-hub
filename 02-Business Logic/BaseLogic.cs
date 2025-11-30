@@ -130,6 +130,12 @@ namespace RacingHubCarRental
             Log("Saving changes to database.");
             return await DB.SaveChangesAsync(token);
         }
+        
+        protected async Task<int> SaveDataAsync(CancellationToken token = default)
+        {
+            Log("Saving changes to database.");
+            return await DB.SaveChangesAsync(token);
+        }
 
         /// <summary>
         /// Synchronous SaveChanges wrapper.
