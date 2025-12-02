@@ -3,30 +3,30 @@ using System;
 namespace RacingHubCarRental
 {
     /// <summary>
-    /// ViewModel used for creating or editing car models.
-    /// Contains UI dropdown data and the CarModel entity.
-    /// Completely rewritten following SRP, immutability, and clarity principles.
+    /// ViewModel used for creating or editing a car model.
+    /// Holds dropdown UI data and the CarModel entity.
+    /// Cleaned and modernized with SRP, immutability, and DI-friendly design.
     /// </summary>
-    public class CarModelViewModel
+    public sealed class CarModelViewModel
     {
         /// <summary>
-        /// Gets dropdown values for Manufacturers and Manufacturer Models.
+        /// Dropdown list data for manufacturers and their models.
         /// </summary>
-        public ManufacturerModelDDLs ManufacturerModelDropdowns { get; }
+        public ManufacturerModelDDLs ManufacturerDropdowns { get; }
 
         /// <summary>
-        /// Gets dropdown values for Gear Types.
+        /// Dropdown list data for gear types.
         /// </summary>
-        public GearDDL GearDropdown { get; }
+        public GearDDL GearDropdowns { get; }
 
         /// <summary>
-        /// Gets or sets the CarModel domain object.
+        /// Car model entity being created or edited.
         /// </summary>
-        public CarModel CarModel { get; set; }
+        public CarModel CarModel { get; }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CarModelViewModel"/> class.
-        /// Safely initializes all dropdowns and ensures CarModel is never null.
+        /// Default constructor initializes empty dropdowns and a new domain model.
+        /// Useful for UI initialization.
         /// </summary>
         public CarModelViewModel()
             : this(new CarModel(), new ManufacturerModelDDLs(), new GearDDL())
@@ -34,21 +34,19 @@ namespace RacingHubCarRental
         }
 
         /// <summary>
-        /// Initializes a new instance with provided domain object and dropdowns.
-        /// Supports dependency injection and unit testing.
+        /// Main constructor used for dependency injection and testing.
+        /// All dependencies must be supplied.
         /// </summary>
         public CarModelViewModel(
             CarModel carModel,
-            ManufacturerModelDDLs manufacturerModelDDLs,
-            GearDDL gearDDL)
+            ManufacturerModelDDLs manufacturerDropdowns,
+            GearDDL gearDropdowns)
         {
             CarModel = carModel ?? throw new ArgumentNullException(nameof(carModel));
-
-            ManufacturerModelDropdowns = manufacturerModelDDLs
-                ?? throw new ArgumentNullException(nameof(manufacturerModelDDLs));
-
-            GearDropdown = gearDDL
-                ?? throw new ArgumentNullException(nameof(gearDDL));
+            ManufacturerDropdowns = manufacturerDropdowns ??
+                                    throw new ArgumentNullException(nameof(manufacturerDropdowns));
+            GearDropdowns = gearDropdowns ??
+                            throw new ArgumentNullException(nameof(gearDropdowns));
         }
     }
 }
