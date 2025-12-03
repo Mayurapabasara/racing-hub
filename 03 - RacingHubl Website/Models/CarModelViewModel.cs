@@ -5,7 +5,7 @@ namespace RacingHubCarRental
     /// <summary>
     /// ViewModel used for creating or editing a car model.
     /// Holds dropdown UI data and the CarModel entity.
-    /// Cleaned and modernized with SRP, immutability, and DI-friendly design.
+    /// Designed to be immutable after construction.
     /// </summary>
     public sealed class CarModelViewModel
     {
@@ -25,8 +25,14 @@ namespace RacingHubCarRental
         public CarModel CarModel { get; }
 
         /// <summary>
+        /// Indicates whether this ViewModel represents an existing car model (edit mode)
+        /// or a new one (create mode).
+        /// </summary>
+        public bool IsEditMode => CarModel is not null && CarModel.Id > 0;
+
+        /// <summary>
         /// Default constructor initializes empty dropdowns and a new domain model.
-        /// Useful for UI initialization.
+        /// Useful for view initialization.
         /// </summary>
         public CarModelViewModel()
             : this(new CarModel(), new ManufacturerModelDDLs(), new GearDDL())
@@ -35,7 +41,7 @@ namespace RacingHubCarRental
 
         /// <summary>
         /// Main constructor used for dependency injection and testing.
-        /// All dependencies must be supplied.
+        /// All dependencies must be supplied and are validated.
         /// </summary>
         public CarModelViewModel(
             CarModel carModel,
