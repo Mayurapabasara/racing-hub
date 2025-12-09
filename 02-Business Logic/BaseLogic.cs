@@ -1,161 +1,160 @@
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace RacingHubCarRental
+namespace RacingHubCarRental;
+
+/// <summary>
+/// Minimal, modern service base class supporting:
+/// - Unified async execution
+/// - Centralized logging (via ILogger)
+/// - Safe disposal
+/// - State change notifications
+/// Designed for clean architecture & testability.
+/// </summary>
+public abstract class BaseLogic : IAsyncDisposable, IDisposable
 {
+    private bool _disposed;
+
     /// <summary>
-    /// Base abstraction for all logic/service classes.
-    /// Modernized to match a clean service-oriented architecture:
-    /// - Centralized exception handling
-    /// - Async-first execution model
-    /// - Pluggable data providers (future microservice compatibility)
-    /// - Unified logging hooks
-    /// - Lightweight and test-friendly design
+    /// Optional logger injected by DI. If null, logging is ignored.
     /// </summary>
-    public abstract class BaseLogic : IDisposable
+    protected ILogger? Logger { get; }
+
+    /// <summary>
+    /// Event fired whenever a mutation occurs in the system.
+    /// </summary>
+    public event Action<DataChangeType>? OnStateChanged;
+
+    /// <summary>
+    /// Creates a new service base class.
+    /// </summary>
+    protected BaseLogic(ILogger? logger = null)
     {
-        // ============================================================
-        // Private State
-        // ============================================================
-        private bool _disposed;
+        Logger = logger;
+        Log("Service initialized.");
+    }
 
-        /// <summary>
-        /// Event fired when any service triggers a data change.
-        /// Helps keep UI/admin dashboards in sync.
-        /// </summary>
-        public event Action<DataChangeType>? OnStateChanged;
+    // -------------------------------------------------------
+    // Logging
+    // -------------------------------------------------------
 
-        // ============================================================
-        // Constructors
-        // ============================================================
+    protected void Log(string message)
+    {
+        Logger?.Log($"{GetType().Name}: {message}");
+    }
 
-        protected BaseLogic()
+    protected void LogError(Exception ex)
+    {
+        Logger?.Log($"ERROR ({GetType().Name}): {ex.Message}");
+    }
+
+    // -------------------------------------------------------
+    // Async Execution Wrappers
+    // -------------------------------------------------------
+
+    /// <summary>
+    /// Executes an async function with automatic error logging.
+    /// </summary>
+    protected async Task<T> ExecuteAsync<T>(
+        Func<CancellationToken, Task<T>> action,
+        CancellationToken cancellationToken = default)
+    {
+        try
         {
-            // Reserved for future dependency injection
-            Log("BaseLogic initialized.");
+            return await action(cancellationToken);
         }
-
-        // ============================================================
-        // Logging Utilities
-        // ============================================================
-
-        /// <summary>
-        /// Writes a log entry using Debug trace.
-        /// Derived services may override to implement:
-        /// - File logging
-        /// - External telemetry
-        /// - ELK / CloudWatch pipelines
-        /// </summary>
-        protected virtual void Log(string message)
+        catch (Exception ex)
         {
-            Debug.WriteLine($"[{GetType().Name}] {message}");
-        }
-
-        // ============================================================
-        // Unified Async Execution Wrappers
-        // ============================================================
-
-        /// <summary>
-        /// Safely executes async operations with automatic logging.
-        /// Recommended for all database or external API calls.
-        /// </summary>
-        protected async Task<T> ExecuteAsync<T>(
-            Func<Task<T>> action,
-            CancellationToken token = default)
-        {
-            try
-            {
-                return await action();
-            }
-            catch (Exception ex)
-            {
-                Log($"Error: {ex.Message}");
-                throw; // Allow controller or API layer to handle
-            }
-        }
-
-        /// <summary>
-        /// Safe wrapper for void async operations.
-        /// </summary>
-        protected async Task ExecuteAsync(
-            Func<Task> action,
-            CancellationToken token = default)
-        {
-            try
-            {
-                await action();
-            }
-            catch (Exception ex)
-            {
-                Log($"Error: {ex.Message}");
-                throw;
-            }
-        }
-
-        // ============================================================
-        // Shared Event Trigger Methods
-        // ============================================================
-
-        /// <summary>
-        /// Notify subscribers that a data mutation occurred.
-        /// Useful for dashboards & future notification microservice hooks.
-        /// </summary>
-        protected void Notify(DataChangeType type)
-        {
-            Log($"State changed: {type}");
-            OnStateChanged?.Invoke(type);
-        }
-
-        public void RefreshData()
-        {
-            Notify(DataChangeType.DataRefreshed);
-        }
-
-        // ============================================================
-        // Cleanup & Resource Management
-        // ============================================================
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (_disposed) return;
-
-            if (disposing)
-            {
-                // In updated architecture, no EF DbContext here.
-                // Reserved for future disposable dependencies.
-                Log("Service resources cleaned.");
-            }
-
-            _disposed = true;
-        }
-
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        ~BaseLogic()
-        {
-            Dispose(false);
+            LogError(ex);
+            throw;
         }
     }
 
     /// <summary>
-    /// Enum representing different system-wide change events.
-    /// Extended for richer admin dashboard integrations.
+    /// Executes an async action with unified error handling.
     /// </summary>
-    public enum DataChangeType
+    protected async Task ExecuteAsync(
+        Func<CancellationToken, Task> action,
+        CancellationToken cancellationToken = default)
     {
-        None,
-        ItemCreated,
-        ItemUpdated,
-        ItemDeleted,
-        UserChanged,
-        DataRefreshed,
-        AllDataCleared
+        try
+        {
+            await action(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            LogError(ex);
+            throw;
+        }
     }
+
+    // -------------------------------------------------------
+    // State Change Notification
+    // -------------------------------------------------------
+
+    protected void Notify(DataChangeType type)
+    {
+        Log($"State changed: {type}");
+        OnStateChanged?.Invoke(type);
+    }
+
+    public void Refresh() => Notify(DataChangeType.DataRefreshed);
+
+    // -------------------------------------------------------
+    // Disposal
+    // -------------------------------------------------------
+
+    protected virtual ValueTask DisposeAsyncCore()
+    {
+        // Override for async cleanup (e.g., DB connections, streams)
+        return ValueTask.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+
+        Log("Async disposal started.");
+
+        await DisposeAsyncCore();
+
+        _disposed = true;
+
+        GC.SuppressFinalize(this);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+
+        Log("Service disposed.");
+
+        _disposed = true;
+
+        GC.SuppressFinalize(this);
+    }
+}
+
+/// <summary>
+/// Represents mutation operations a service can trigger.
+/// </summary>
+public enum DataChangeType
+{
+    None,
+    ItemCreated,
+    ItemUpdated,
+    ItemDeleted,
+    UserChanged,
+    DataRefreshed,
+    AllDataCleared
+}
+
+/// <summary>
+/// Lightweight logger abstraction for testable logging.
+/// </summary>
+public interface ILogger
+{
+    void Log(string message);
 }
 
