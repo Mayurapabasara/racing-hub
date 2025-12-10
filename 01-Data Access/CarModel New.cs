@@ -43,6 +43,7 @@ namespace RacingHubCarRental
         /// Penalty price applied per delayed day during late returns.
         /// </summary>
         public decimal DayDelayPrice { get; set; }
+        public decimal DayIncomePrice { get; set; }
 
         public virtual ManufacturerModel ManufacturerModel { get; set; }
         
