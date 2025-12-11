@@ -16,6 +16,6 @@ namespace RacingHubCarRental
         public int ManufacturerID { get; set; }
     
         public static ICollection<CarModel> CarModels { get; set; }
-        public virtual Manufacturer Manufacturer { get; set; }
+        
     }
 }
