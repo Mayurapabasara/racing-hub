@@ -22,6 +22,7 @@ namespace RacingHubCarRental
         public int ManufacturerModelID { get; set; }
         public int ProductionYear { get; set; }
         public bool ManualGear { get; set; }
+        public bool IsBoosted { get; set; }
         public decimal DailyPrice { get; set; }
         public decimal DayDelayPrice { get; set; }
 
