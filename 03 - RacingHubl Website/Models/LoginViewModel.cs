@@ -30,7 +30,7 @@ namespace RacingHubCarRental
         /// <summary>
         /// Indicates whether the system should keep the user logged in.
         /// </summary>
-        [Display(Name = "Remember Me")]
+
         public bool RememberMe { get; set; }
     }
 }
