@@ -30,13 +30,7 @@ namespace RacingHubCarRental
         /// </summary>
         public bool IsManualGear { get; set; }
 
-        // ---------------------------------------------------------------------
-        // Pricing & Billing
-        // ---------------------------------------------------------------------
-
-        /// <summary>
-        /// Standard daily rental price for this model.
-        /// </summary>
+       
         public decimal DailyPrice { get; set; }
 
         /// <summary>
