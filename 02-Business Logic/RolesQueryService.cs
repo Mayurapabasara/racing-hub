@@ -173,10 +173,7 @@ namespace RacingHubCarRental.Services
             token);
         }
 
-        // =====================================================================
-        // GET ROLES FOR USER
-        // =====================================================================
-
+      
         public string[] GetRolesForUser(string username)
         {
             ValidateUsername(username);
