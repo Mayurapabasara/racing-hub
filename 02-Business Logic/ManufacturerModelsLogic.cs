@@ -7,10 +7,7 @@ using System.Threading.Tasks;
 
 namespace RacingHubCarRental
 {
-    /// <summary>
-    /// Async-first logic service for ManufacturerModel CRUD operations.
-    /// Extensively decomposed to ensure maximum contribution granularity.
-    /// </summary>
+  
     public class ManufacturerModelsLogic : BaseLogic
     {
         // =====================================================================
