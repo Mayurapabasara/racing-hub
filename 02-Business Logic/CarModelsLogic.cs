@@ -190,10 +190,6 @@ namespace RacingHubCarRental
             }, token);
         }
 
-        // ===============================================================
-        // LEGACY SYNC METHODS (OPTIONAL SUPPORT)
-        // ===============================================================
-
         public List<CarModel> GetAllCarModels()
         {
             return OrderedQuery(QueryBase()).ToList();
