@@ -17,7 +17,7 @@ namespace RacingHubCarRental
         {
             FleetCars = new HashSet<FleetCar>();
         }
-
+	[required:1000]
         public int CarModelID { get; set; }
         public int ManufacturerModelID { get; set; }
         public int ProductionYear { get; set; }
