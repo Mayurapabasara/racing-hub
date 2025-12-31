@@ -84,6 +84,7 @@ namespace RacingHubCarRental.Interfaces
         /// Checks if a user belongs to a role.
         /// </summary>
         Task<bool> IsUserInRoleAsync(string username, string roleName);
+        Task<bool> IsUserInRoleSync(string username, string roleName);
         Task<bool> IsUserInRole(string username, string roleName);
 
         /// <summary>
