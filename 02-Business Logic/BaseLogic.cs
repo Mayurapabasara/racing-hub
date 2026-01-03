@@ -145,6 +145,7 @@ public enum DataChangeType
     ItemCreated,
     ItemUpdated,
     ItemDeleted,
+    ItemAdded,
     UserChanged,
     DataRefreshed,
     AllDataCleared
